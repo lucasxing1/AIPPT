@@ -1,13 +1,32 @@
 /**
  * 幻灯片数据结构
  */
+export type ProjectStatus =
+  | 'draft'
+  | 'planning'
+  | 'prompts_ready'
+  | 'generating'
+  | 'generated'
+  | 'editing'
+  | 'error'
+
+export interface SlideAssetRef {
+  key: string
+  mimeType: string
+  byteLength: number
+  sha256?: string
+}
+
 export interface Slide {
   id: string
   pageNumber: number
   imageUrl: string
   imageBase64?: string
   imageStorageKey?: string
+  imageAsset?: SlideAssetRef
   prompt: string
+  editHistory?: EditHistoryItem[]
+  updatedAt?: number
 }
 
 /**
@@ -114,6 +133,49 @@ export interface ConfirmedSlidePrompt {
   content_summary: string
   display_content?: string
   prompt: string
+}
+
+export interface WorkflowState {
+  status:
+    | 'idle'
+    | 'outline_loading'
+    | 'outline_ready'
+    | 'prompts_loading'
+    | 'prompts_ready'
+    | 'error'
+  outline: DeckOutline | null
+  slidePrompts: ConfirmedSlidePrompt[]
+  expandedOutlinePages: number[]
+  expandedDesignPages: number[]
+  error: string | null
+}
+
+export interface ProjectSummary {
+  id: string
+  title: string
+  fileName: string
+  slideCount: number
+  status: ProjectStatus
+  createdAt: number
+  updatedAt: number
+  lastOpenedAt: number
+}
+
+export interface ProjectRecord {
+  version: 2
+  id: string
+  title: string
+  fileName: string
+  fileContent: string
+  slides: Slide[]
+  generationConfig: GenerationConfig
+  workflow: WorkflowState
+  status: ProjectStatus
+  generationRunId: string | null
+  lastCompletedSlides: Slide[]
+  createdAt: number
+  updatedAt: number
+  lastOpenedAt: number
 }
 
 /**

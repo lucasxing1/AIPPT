@@ -8,7 +8,7 @@ import {
 } from '../types'
 
 export const TEST_GENERATION_CONFIG: GenerationConfig = {
-  pageCount: 10,
+  pageCount: 1,
   quality: '1K',
   aspectRatio: '16:9',
   language: '中文',
@@ -28,11 +28,17 @@ export const EMPTY_WORKFLOW_STATE: WorkflowState = {
 
 export function buildDeckOutline(overrides: Partial<DeckOutline> = {}): DeckOutline {
   return {
-    title: 'Untitled deck',
-    user_requirements: '',
+    title: 'Demo deck',
+    user_requirements: 'Make it concise',
     design_style: 'Modern',
-    audience: 'Professional audience',
-    slides: [],
+    audience: 'Sales',
+    slides: [{
+      page: 1,
+      title: 'Cover',
+      narrative_goal: 'Introduce the deck',
+      key_points: ['L9'],
+      visual_direction: 'Dark vehicle hero'
+    }],
     ...overrides
   }
 }
@@ -40,10 +46,10 @@ export function buildDeckOutline(overrides: Partial<DeckOutline> = {}): DeckOutl
 export function buildSlidePrompt(overrides: Partial<ConfirmedSlidePrompt> = {}): ConfirmedSlidePrompt {
   return {
     page: 1,
-    title: 'Slide 1',
-    content_summary: 'Slide summary',
-    display_content: 'Slide summary',
-    prompt: 'Generate slide 1',
+    title: 'Cover',
+    content_summary: 'A cover page',
+    display_content: 'A cover page',
+    prompt: 'Generate a cover page',
     ...overrides
   }
 }
@@ -54,27 +60,27 @@ export function buildSlide(overrides: Partial<Slide> = {}): Slide {
     pageNumber: 1,
     imageUrl: 'data:image/png;base64,aaa',
     imageBase64: 'aaa',
-    prompt: 'Generate slide 1',
+    prompt: 'Generate a cover page',
     ...overrides
   }
 }
 
 export function buildProjectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
-  const now = Date.now()
-  const slides = overrides.slides ?? []
+  const now = 1712131200000
+  const slides = overrides.slides ?? [buildSlide()]
 
   return {
     version: 2,
     id: 'project-1',
-    title: 'Untitled deck',
-    fileName: 'deck.md',
-    fileContent: '',
+    title: 'Demo deck',
+    fileName: 'L9.md',
+    fileContent: '# L9',
     slides,
     generationConfig: TEST_GENERATION_CONFIG,
     workflow: EMPTY_WORKFLOW_STATE,
-    status: 'draft',
+    status: 'generated',
     generationRunId: null,
-    lastCompletedSlides: [],
+    lastCompletedSlides: slides,
     createdAt: now,
     updatedAt: now,
     lastOpenedAt: now,

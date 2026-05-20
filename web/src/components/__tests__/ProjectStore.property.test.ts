@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import 'fake-indexeddb/auto'
-import { ProjectRecord, Slide } from '../../types'
-import { buildProjectRecord } from '../../services/projectStore.test-utils'
+import type { ProjectRecord, Slide } from '../../types'
+import {
+  TEST_GENERATION_CONFIG,
+  buildDeckOutline,
+  buildProjectRecord,
+  buildSlide,
+  buildSlidePrompt
+} from '../../services/projectStore.test-utils'
 
 describe('ProjectStore durable type shape', () => {
   it('builds a project record with workflow and asset-backed slides', () => {
@@ -10,6 +16,13 @@ describe('ProjectStore durable type shape', () => {
       pageNumber: 1,
       imageUrl: 'data:image/png;base64,aaa',
       imageBase64: 'aaa',
+      imageStorageKey: 'slides/project-1/slide-1.png',
+      imageAsset: {
+        key: 'slides/project-1/slide-1.png',
+        mimeType: 'image/png',
+        byteLength: 3,
+        sha256: 'sha256-aaa'
+      },
       prompt: 'A title slide'
     }
 
@@ -51,5 +64,54 @@ describe('ProjectStore durable type shape', () => {
     expect(project.id).toBe('project-1')
     expect(project.workflow.status).toBe('prompts_ready')
     expect(project.slides[0].imageBase64).toBe('aaa')
+    expect(project.slides[0].imageStorageKey).toBe('slides/project-1/slide-1.png')
+    expect(project.slides[0].imageAsset).toEqual({
+      key: 'slides/project-1/slide-1.png',
+      mimeType: 'image/png',
+      byteLength: 3,
+      sha256: 'sha256-aaa'
+    })
+  })
+
+  it('provides deterministic project store test fixtures', () => {
+    const outline = buildDeckOutline()
+    const slidePrompt = buildSlidePrompt()
+    const slide = buildSlide()
+    const project = buildProjectRecord()
+
+    expect(TEST_GENERATION_CONFIG.pageCount).toBe(1)
+    expect(outline).toEqual({
+      title: 'Demo deck',
+      user_requirements: 'Make it concise',
+      design_style: 'Modern',
+      audience: 'Sales',
+      slides: [{
+        page: 1,
+        title: 'Cover',
+        narrative_goal: 'Introduce the deck',
+        key_points: ['L9'],
+        visual_direction: 'Dark vehicle hero'
+      }]
+    })
+    expect(slidePrompt).toEqual({
+      page: 1,
+      title: 'Cover',
+      content_summary: 'A cover page',
+      display_content: 'A cover page',
+      prompt: 'Generate a cover page'
+    })
+    expect(slide.prompt).toBe('Generate a cover page')
+    expect(project).toMatchObject({
+      version: 2,
+      title: 'Demo deck',
+      fileName: 'L9.md',
+      fileContent: '# L9',
+      status: 'generated',
+      createdAt: 1712131200000,
+      updatedAt: 1712131200000,
+      lastOpenedAt: 1712131200000
+    })
+    expect(project.slides).toEqual([slide])
+    expect(project.lastCompletedSlides).toEqual(project.slides)
   })
 })

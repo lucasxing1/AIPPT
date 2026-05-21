@@ -71,20 +71,19 @@ export function buildProjectRecord(overrides: Partial<ProjectRecord> = {}): Proj
 
   return {
     version: 2,
-    id: 'project-1',
-    title: 'Demo deck',
-    fileName: 'L9.md',
-    fileContent: '# L9',
+    id: overrides.id || 'project-1',
+    title: overrides.title || 'Demo deck',
+    fileName: overrides.fileName || 'L9.md',
+    fileContent: overrides.fileContent || '# L9',
     slides,
-    generationConfig: TEST_GENERATION_CONFIG,
-    workflow: EMPTY_WORKFLOW_STATE,
-    status: 'generated',
-    generationRunId: null,
-    lastCompletedSlides: slides,
-    createdAt: now,
-    updatedAt: now,
-    lastOpenedAt: now,
-    ...overrides
+    generationConfig: overrides.generationConfig || TEST_GENERATION_CONFIG,
+    workflow: overrides.workflow || EMPTY_WORKFLOW_STATE,
+    status: overrides.status || 'generated',
+    generationRunId: overrides.generationRunId ?? null,
+    lastCompletedSlides: overrides.lastCompletedSlides || slides,
+    createdAt: overrides.createdAt || now,
+    updatedAt: overrides.updatedAt || now,
+    lastOpenedAt: overrides.lastOpenedAt || now
   }
 }
 
@@ -95,10 +94,7 @@ export async function resetProjectStoreForTests(): Promise<void> {
     return
   }
 
-  await Promise.all([
-    deleteIndexedDb('aippt_slide_images'),
-    deleteIndexedDb('aippt_projects')
-  ])
+  await deleteIndexedDb('aippt_projects')
 }
 
 function deleteIndexedDb(name: string): Promise<void> {

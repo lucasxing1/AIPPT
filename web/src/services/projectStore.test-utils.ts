@@ -65,6 +65,14 @@ export function buildSlide(overrides: Partial<Slide> = {}): Slide {
   }
 }
 
+function cloneSlide(slide: Slide): Slide {
+  return {
+    ...slide,
+    ...(slide.imageAsset ? { imageAsset: { ...slide.imageAsset } } : {}),
+    ...(slide.editHistory ? { editHistory: slide.editHistory.map((item) => ({ ...item })) } : {})
+  }
+}
+
 export function buildProjectRecord(overrides: Partial<ProjectRecord> = {}): ProjectRecord {
   const now = 1712131200000
   const slides = overrides.slides ?? [buildSlide()]
@@ -80,7 +88,7 @@ export function buildProjectRecord(overrides: Partial<ProjectRecord> = {}): Proj
     workflow: overrides.workflow || EMPTY_WORKFLOW_STATE,
     status: overrides.status || 'generated',
     generationRunId: overrides.generationRunId ?? null,
-    lastCompletedSlides: overrides.lastCompletedSlides || slides,
+    lastCompletedSlides: overrides.lastCompletedSlides || slides.map(cloneSlide),
     createdAt: overrides.createdAt || now,
     updatedAt: overrides.updatedAt || now,
     lastOpenedAt: overrides.lastOpenedAt || now
@@ -102,6 +110,6 @@ function deleteIndexedDb(name: string): Promise<void> {
     const request = indexedDB.deleteDatabase(name)
     request.onsuccess = () => resolve()
     request.onerror = () => reject(request.error || new Error(`Failed to delete ${name}`))
-    request.onblocked = () => resolve()
+    request.onblocked = () => reject(new Error(`Blocked while deleting ${name}`))
   })
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import 'fake-indexeddb/auto'
 import type { ProjectRecord, Slide } from '../../types'
 import {
@@ -7,7 +7,8 @@ import {
   buildDeckOutline,
   buildProjectRecord,
   buildSlide,
-  buildSlidePrompt
+  buildSlidePrompt,
+  resetProjectStoreForTests
 } from '../../services/projectStore.test-utils'
 
 describe('ProjectStore durable type shape', () => {
@@ -116,6 +117,20 @@ describe('ProjectStore durable type shape', () => {
     expect(project.lastCompletedSlides).toEqual(project.slides)
   })
 
+  it('copies default completed slides without sharing slide references', () => {
+    const project = buildProjectRecord()
+
+    expect(project.lastCompletedSlides).toEqual(project.slides)
+    expect(project.lastCompletedSlides).not.toBe(project.slides)
+    expect(project.lastCompletedSlides[0]).not.toBe(project.slides[0])
+
+    const explicitCompletedSlides = [buildSlide({ id: 'completed-slide' })]
+    const projectWithExplicitCompletedSlides = buildProjectRecord({
+      lastCompletedSlides: explicitCompletedSlides
+    })
+    expect(projectWithExplicitCompletedSlides.lastCompletedSlides).toBe(explicitCompletedSlides)
+  })
+
   it('falls back for falsy project record overrides according to the plan', () => {
     const project = buildProjectRecord({
       id: '',
@@ -142,7 +157,8 @@ describe('ProjectStore durable type shape', () => {
     expect(project.workflow).toBe(EMPTY_WORKFLOW_STATE)
     expect(project.status).toBe('generated')
     expect(project.generationRunId).toBe('')
-    expect(project.lastCompletedSlides).toBe(project.slides)
+    expect(project.lastCompletedSlides).toEqual(project.slides)
+    expect(project.lastCompletedSlides).not.toBe(project.slides)
     expect(project.createdAt).toBe(1712131200000)
     expect(project.updatedAt).toBe(1712131200000)
     expect(project.lastOpenedAt).toBe(1712131200000)
@@ -153,5 +169,22 @@ describe('ProjectStore durable type shape', () => {
     })
     expect(emptySlideOverrides.slides).toEqual([])
     expect(emptySlideOverrides.lastCompletedSlides).toEqual([])
+  })
+
+  it('rejects reset when IndexedDB deletion is blocked', async () => {
+    const deleteDatabaseSpy = vi.spyOn(indexedDB, 'deleteDatabase').mockImplementation(() => {
+      const request = {} as IDBOpenDBRequest
+      queueMicrotask(() => {
+        request.onblocked?.(new Event('blocked') as IDBVersionChangeEvent)
+      })
+      return request
+    })
+
+    try {
+      await expect(resetProjectStoreForTests()).rejects.toThrow('Blocked while deleting aippt_projects')
+      expect(deleteDatabaseSpy).toHaveBeenCalledWith('aippt_projects')
+    } finally {
+      deleteDatabaseSpy.mockRestore()
+    }
   })
 })

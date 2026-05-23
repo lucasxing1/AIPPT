@@ -33,6 +33,8 @@ const OTHER_IMAGE = 'b3RoZXI='
 const currentAssetKey = (projectId: string, slideId: string) => `${projectId}:slides:${slideId}:current`
 const completedAssetKey = (projectId: string, slideId: string) =>
   `${projectId}:lastCompletedSlides:${slideId}:current`
+const editHistoryAssetKey = (projectId: string, bucket: 'slides' | 'lastCompletedSlides', slideId: string) =>
+  `${projectId}:${bucket}:${slideId}:editHistory:0:1234`
 
 function imageSlide(overrides: Partial<Slide> = {}): Slide {
   return buildSlide({
@@ -255,6 +257,98 @@ describe('IndexedDB project store', () => {
 
     expect(await getProject('failed-save')).toBeNull()
     expect(await readStoredAsset(currentAssetKey('failed-save', 'slide-1'))).toBeNull()
+  })
+
+  it('rolls back slide assets when the project record write fails', async () => {
+    const project = buildProjectRecord({
+      id: 'transaction-failure',
+      slides: [imageSlide({ id: 'slide-1', imageBase64: CURRENT_IMAGE })],
+      lastCompletedSlides: []
+    })
+    const originalPut = IDBObjectStore.prototype.put
+    const putSpy = vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+      this: IDBObjectStore,
+      value: unknown,
+      key?: IDBValidKey
+    ) {
+      if (this.name === 'projects') {
+        throw new Error('project put failed')
+      }
+
+      return key === undefined
+        ? originalPut.call(this, value)
+        : originalPut.call(this, value, key)
+    })
+
+    await expect(saveProjectRecord(project)).rejects.toThrow('project put failed')
+    putSpy.mockRestore()
+
+    expect(await readStoredProject('transaction-failure')).toBeNull()
+    expect(await readStoredAsset(currentAssetKey('transaction-failure', 'slide-1'))).toBeNull()
+  })
+
+  it('stores edit-history images as assets and hydrates them back onto the slide history', async () => {
+    const historyImage = 'aGlzdG9yeQ=='
+    const project = buildProjectRecord({
+      id: 'history-assets',
+      slides: [
+        imageSlide({
+          id: 'slide-1',
+          imageBase64: CURRENT_IMAGE,
+          editHistory: [{
+            imageUrl: `data:image/webp;base64,${historyImage}`,
+            imageBase64: historyImage,
+            instruction: 'make it brighter',
+            timestamp: 1234
+          }]
+        })
+      ],
+      lastCompletedSlides: []
+    })
+
+    const saved = await saveProjectRecord(project)
+    const stored = await readStoredProject('history-assets')
+    const historyKey = editHistoryAssetKey('history-assets', 'slides', 'slide-1')
+
+    expect(stored?.slides[0].editHistory?.[0]).toEqual({
+      imageUrl: `asset:${historyKey}`,
+      imageBase64: '',
+      instruction: 'make it brighter',
+      timestamp: 1234
+    })
+    expect(JSON.stringify(stored)).not.toContain(historyImage)
+    expect(JSON.stringify(stored)).not.toContain(`data:image/webp;base64,${historyImage}`)
+    expect(await readStoredAsset(historyKey)).toMatchObject({
+      key: historyKey,
+      projectId: 'history-assets',
+      bucket: 'slides',
+      slideId: 'slide-1',
+      mimeType: 'image/webp',
+      imageBase64: historyImage
+    })
+
+    const hydrated = await hydrateProjectImages(saved)
+    expect(hydrated.slides[0].editHistory?.[0]).toEqual({
+      imageUrl: `data:image/webp;base64,${historyImage}`,
+      imageBase64: historyImage,
+      instruction: 'make it brighter',
+      timestamp: 1234
+    })
+  })
+
+  it('hydrates larger image assets with chunked base64 conversion', async () => {
+    const largeImage = btoa('x'.repeat(130_000))
+    const project = buildProjectRecord({
+      id: 'large-image',
+      slides: [imageSlide({ id: 'large-slide', imageBase64: largeImage })],
+      lastCompletedSlides: []
+    })
+
+    const saved = await saveProjectRecord(project)
+    const hydrated = await hydrateProjectImages(saved)
+
+    expect(hydrated.slides[0].imageBase64).toBe(largeImage)
+    expect(hydrated.slides[0].imageUrl).toBe(`data:image/png;base64,${largeImage}`)
   })
 
   it('persists arbitrary small project metadata without mutating source fields', async () => {

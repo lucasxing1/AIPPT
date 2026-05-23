@@ -1,4 +1,4 @@
-import type { ProjectRecord, ProjectSummary, Slide, SlideAssetRef } from '../types'
+import type { EditHistoryItem, ProjectRecord, ProjectSummary, Slide, SlideAssetRef } from '../types'
 
 const DB_NAME = 'aippt_projects'
 const DB_VERSION = 1
@@ -6,6 +6,8 @@ const PROJECT_STORE = 'projects'
 const ASSET_STORE = 'assets'
 const ACTIVE_PROJECT_ID_KEY = 'aippt_active_project_id'
 const DEFAULT_IMAGE_MIME_TYPE = 'image/png'
+const COMPACT_ASSET_URL_PREFIX = 'asset:'
+const BASE64_CONVERSION_CHUNK_SIZE = 0x8000
 
 type SlideBucket = 'slides' | 'lastCompletedSlides'
 
@@ -51,24 +53,12 @@ export async function saveProjectRecord(project: ProjectRecord): Promise<Project
     )
     const pendingAssets = [...compactedSlides.assets, ...compactedCompletedSlides.assets]
 
-    await putAssets(db, pendingAssets)
-
     const compactProject: ProjectRecord = {
       ...project,
       slides: compactedSlides.slides,
       lastCompletedSlides: compactedCompletedSlides.slides
     }
-    const assetByKey = new Map(pendingAssets.map((asset) => [asset.key, asset]))
-    await loadReferencedAssets(db, compactProject, assetByKey)
-
-    const normalizedProject: ProjectRecord = {
-      ...compactProject,
-      slides: applyAssetMetadata(compactProject.slides, assetByKey),
-      lastCompletedSlides: applyAssetMetadata(compactProject.lastCompletedSlides, assetByKey)
-    }
-
-    await putProject(db, normalizedProject)
-    return normalizedProject
+    return await saveCompactedProjectInTransaction(db, compactProject, pendingAssets)
   } finally {
     db.close()
   }
@@ -256,7 +246,12 @@ function compactSlides(
   const assets: ProjectAssetRecord[] = []
   const compactedSlides = slides.map((slide) => {
     const image = extractSlideImage(slide)
-    const compactSlide = cloneSlideWithoutBase64(slide)
+    const compactedHistory = compactEditHistory(projectId, bucket, slide, updatedAt)
+    const compactSlide: Slide = {
+      ...cloneSlideWithoutBase64(slide),
+      ...(slide.editHistory ? { editHistory: compactedHistory.editHistory } : {})
+    }
+    assets.push(...compactedHistory.assets)
 
     if (!image) {
       const referenceKey = getSlideAssetKey(slide)
@@ -311,6 +306,73 @@ function extractSlideImage(slide: Slide): SlideImagePayload | null {
   return dataUrlImage
 }
 
+function compactEditHistory(
+  projectId: string,
+  bucket: SlideBucket,
+  slide: Slide,
+  updatedAt: number
+): { editHistory: EditHistoryItem[]; assets: ProjectAssetRecord[] } {
+  if (!slide.editHistory) {
+    return {
+      editHistory: [],
+      assets: []
+    }
+  }
+
+  const assets: ProjectAssetRecord[] = []
+  const editHistory = slide.editHistory.map((item, index) => {
+    const image = extractEditHistoryImage(item)
+    const existingAssetKey = getEditHistoryAssetKey(item)
+
+    if (!image) {
+      return existingAssetKey
+        ? {
+          ...item,
+          imageUrl: `${COMPACT_ASSET_URL_PREFIX}${existingAssetKey}`,
+          imageBase64: ''
+        }
+        : { ...item }
+    }
+
+    const key = createEditHistoryAssetKey(projectId, bucket, slide.id, index, item.timestamp)
+    const bytes = base64ToArrayBuffer(image.base64)
+    assets.push({
+      key,
+      projectId,
+      bucket,
+      slideId: slide.id,
+      mimeType: image.mimeType,
+      bytes,
+      byteLength: bytes.byteLength,
+      updatedAt
+    })
+
+    return {
+      ...item,
+      imageUrl: `${COMPACT_ASSET_URL_PREFIX}${key}`,
+      imageBase64: ''
+    }
+  })
+
+  return {
+    editHistory,
+    assets
+  }
+}
+
+function extractEditHistoryImage(item: EditHistoryItem): SlideImagePayload | null {
+  const dataUrlImage = extractDataUrlImage(item.imageUrl)
+
+  if (item.imageBase64) {
+    return {
+      base64: item.imageBase64,
+      mimeType: dataUrlImage?.mimeType || DEFAULT_IMAGE_MIME_TYPE
+    }
+  }
+
+  return dataUrlImage
+}
+
 function extractDataUrlImage(imageUrl: string): SlideImagePayload | null {
   const match = /^data:([^;,]+);base64,(.*)$/i.exec(imageUrl)
   if (!match?.[2]) {
@@ -341,8 +403,24 @@ function createSlideAssetKey(projectId: string, bucket: SlideBucket, slideId: st
   return `${projectId}:${bucket}:${slideId}:current`
 }
 
+function createEditHistoryAssetKey(
+  projectId: string,
+  bucket: SlideBucket,
+  slideId: string,
+  historyIndex: number,
+  timestamp: number
+): string {
+  return `${projectId}:${bucket}:${slideId}:editHistory:${historyIndex}:${timestamp}`
+}
+
 function getSlideAssetKey(slide: Slide): string | null {
   return slide.imageStorageKey || slide.imageAsset?.key || null
+}
+
+function getEditHistoryAssetKey(item: EditHistoryItem): string | null {
+  return item.imageUrl.startsWith(COMPACT_ASSET_URL_PREFIX)
+    ? item.imageUrl.slice(COMPACT_ASSET_URL_PREFIX.length)
+    : null
 }
 
 function createSlideAssetRef(asset: ProjectAssetRecord): SlideAssetRef {
@@ -353,47 +431,66 @@ function createSlideAssetRef(asset: ProjectAssetRecord): SlideAssetRef {
   }
 }
 
-async function putAssets(db: IDBDatabase, assets: ProjectAssetRecord[]): Promise<void> {
-  if (assets.length === 0) {
-    return
-  }
-
-  const transaction = db.transaction(ASSET_STORE, 'readwrite')
+async function saveCompactedProjectInTransaction(
+  db: IDBDatabase,
+  project: ProjectRecord,
+  assets: ProjectAssetRecord[]
+): Promise<ProjectRecord> {
+  const transaction = db.transaction([PROJECT_STORE, ASSET_STORE], 'readwrite')
   const done = transactionDone(transaction)
-  const store = transaction.objectStore(ASSET_STORE)
+  const assetStore = transaction.objectStore(ASSET_STORE)
+  const projectStore = transaction.objectStore(PROJECT_STORE)
+  const assetByKey = new Map(assets.map((asset) => [asset.key, asset]))
 
   try {
-    assets.forEach((asset) => store.put(asset))
+    assets.forEach((asset) => assetStore.put(asset))
+    await loadReferencedAssets(assetStore, project, assetByKey)
+
+    const normalizedProject: ProjectRecord = {
+      ...project,
+      slides: applyAssetMetadata(project.slides, assetByKey),
+      lastCompletedSlides: applyAssetMetadata(project.lastCompletedSlides, assetByKey)
+    }
+
+    projectStore.put(normalizedProject)
+    await done
+    return normalizedProject
   } catch (error) {
-    transaction.abort()
+    abortTransaction(transaction)
+    await ignoreTransactionAbort(done)
     throw error
   }
-
-  await done
-}
-
-async function putProject(db: IDBDatabase, project: ProjectRecord): Promise<void> {
-  const transaction = db.transaction(PROJECT_STORE, 'readwrite')
-  const done = transactionDone(transaction)
-  transaction.objectStore(PROJECT_STORE).put(project)
-  await done
 }
 
 async function loadReferencedAssets(
-  db: IDBDatabase,
+  assetStore: IDBObjectStore,
   project: ProjectRecord,
   assetByKey: Map<string, ProjectAssetRecord>
 ): Promise<void> {
   for (const key of collectAssetKeys(project)) {
-    if (assetByKey.has(key)) {
-      continue
+    if (!assetByKey.has(key)) {
+      const asset = await requestToPromise<ProjectAssetRecord | undefined>(assetStore.get(key))
+      if (!asset) {
+        throw new Error(`Missing image asset: ${key}`)
+      }
+      assetByKey.set(key, asset)
     }
+  }
+}
 
-    const asset = await getAsset(db, key)
-    if (!asset) {
-      throw new Error(`Missing image asset: ${key}`)
-    }
-    assetByKey.set(key, asset)
+function abortTransaction(transaction: IDBTransaction): void {
+  try {
+    transaction.abort()
+  } catch {
+    // The transaction may already be inactive or aborted by IndexedDB.
+  }
+}
+
+async function ignoreTransactionAbort(done: Promise<void>): Promise<void> {
+  try {
+    await done
+  } catch {
+    // Preserve the original validation or request error.
   }
 }
 
@@ -402,10 +499,29 @@ function collectAssetKeys(project: ProjectRecord): string[] {
   const keys: string[] = []
 
   for (const slide of [...project.slides, ...project.lastCompletedSlides]) {
-    const key = getSlideAssetKey(slide)
-    if (key && !seen.has(key)) {
-      seen.add(key)
-      keys.push(key)
+    for (const key of getSlideReferencedAssetKeys(slide)) {
+      if (!seen.has(key)) {
+        seen.add(key)
+        keys.push(key)
+      }
+    }
+  }
+
+  return keys
+}
+
+function getSlideReferencedAssetKeys(slide: Slide): string[] {
+  const keys: string[] = []
+  const slideAssetKey = getSlideAssetKey(slide)
+
+  if (slideAssetKey) {
+    keys.push(slideAssetKey)
+  }
+
+  for (const item of slide.editHistory ?? []) {
+    const historyAssetKey = getEditHistoryAssetKey(item)
+    if (historyAssetKey) {
+      keys.push(historyAssetKey)
     }
   }
 
@@ -451,27 +567,60 @@ async function hydrateSlides(db: IDBDatabase, slides: Slide[]): Promise<Slide[]>
   for (const slide of slides) {
     const key = getSlideAssetKey(slide)
     if (!key) {
-      hydratedSlides.push(cloneSlide(slide))
+      hydratedSlides.push(await hydrateEditHistory(db, cloneSlide(slide)))
       continue
     }
 
     const asset = await getAsset(db, key)
     if (!asset) {
-      hydratedSlides.push(cloneSlide(slide))
+      hydratedSlides.push(await hydrateEditHistory(db, cloneSlide(slide)))
       continue
     }
 
     const imageBase64 = arrayBufferToBase64(asset.bytes)
-    hydratedSlides.push({
+    hydratedSlides.push(await hydrateEditHistory(db, {
       ...cloneSlideWithoutBase64(slide),
       imageStorageKey: key,
       imageAsset: createSlideAssetRef(asset),
       imageBase64,
       imageUrl: `data:${asset.mimeType};base64,${imageBase64}`
-    })
+    }))
   }
 
   return hydratedSlides
+}
+
+async function hydrateEditHistory(db: IDBDatabase, slide: Slide): Promise<Slide> {
+  if (!slide.editHistory) {
+    return slide
+  }
+
+  const editHistory: EditHistoryItem[] = []
+  for (const item of slide.editHistory) {
+    const key = getEditHistoryAssetKey(item)
+    if (!key) {
+      editHistory.push({ ...item })
+      continue
+    }
+
+    const asset = await getAsset(db, key)
+    if (!asset) {
+      editHistory.push({ ...item })
+      continue
+    }
+
+    const imageBase64 = arrayBufferToBase64(asset.bytes)
+    editHistory.push({
+      ...item,
+      imageUrl: `data:${asset.mimeType};base64,${imageBase64}`,
+      imageBase64
+    })
+  }
+
+  return {
+    ...slide,
+    editHistory
+  }
 }
 
 function createProjectSummary(project: ProjectRecord): ProjectSummary {
@@ -529,8 +678,9 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer)
   let binary = ''
 
-  for (let index = 0; index < bytes.length; index += 1) {
-    binary += String.fromCharCode(bytes[index])
+  for (let index = 0; index < bytes.length; index += BASE64_CONVERSION_CHUNK_SIZE) {
+    const chunk = bytes.subarray(index, index + BASE64_CONVERSION_CHUNK_SIZE)
+    binary += String.fromCharCode(...chunk)
   }
 
   return btoa(binary)

@@ -5,7 +5,15 @@
  * Requirements: 10.1, 10.2, 10.3
  */
 
-import { Slide, ApiConfig, GenerationConfig } from '../types'
+import { Slide, ApiConfig, GenerationConfig, ProjectRecord, WorkflowState } from '../types'
+import {
+  createProjectId,
+  getActiveProjectId,
+  getProject,
+  hydrateProjectImages,
+  saveProjectRecord,
+  setActiveProjectId
+} from './projectStore'
 
 /**
  * localStorage 持久化结构
@@ -63,6 +71,47 @@ export const DEFAULT_GENERATION_CONFIG = _DEFAULT_GENERATION_CONFIG
 interface SlideImageRecord {
   key: string
   imageBase64: string
+}
+
+function legacyStateKey(): string {
+  return STORAGE_KEYS.STATE
+}
+
+function emptyWorkflow(): WorkflowState {
+  return {
+    status: 'idle',
+    outline: null,
+    slidePrompts: [],
+    expandedOutlinePages: [],
+    expandedDesignPages: [],
+    error: null
+  }
+}
+
+function projectTitleFromFileName(fileName: string): string {
+  const baseName = fileName.split(/[\\/]/).pop()?.replace(/\.[^/.]+$/, '').trim()
+  return baseName || 'Untitled project'
+}
+
+function legacyProjectToRecord(project: NonNullable<PersistedState['currentProject']>): ProjectRecord {
+  const now = Date.now()
+
+  return {
+    version: 2,
+    id: createProjectId(),
+    title: projectTitleFromFileName(project.fileName),
+    fileName: project.fileName,
+    fileContent: project.fileContent,
+    slides: project.slides,
+    generationConfig: project.generationConfig,
+    workflow: emptyWorkflow(),
+    status: project.slides.length > 0 ? 'generated' : 'draft',
+    generationRunId: null,
+    lastCompletedSlides: project.slides,
+    createdAt: now,
+    updatedAt: now,
+    lastOpenedAt: now
+  }
 }
 
 /**
@@ -336,6 +385,30 @@ export class StorageService {
   }
 
   /**
+   * 加载当前活动项目，并在需要时把旧 localStorage 单项目状态迁移到 IndexedDB 项目库
+   */
+  static async loadActiveProjectWithMigration(): Promise<ProjectRecord | null> {
+    const activeProjectId = await getActiveProjectId()
+    if (activeProjectId) {
+      const activeProject = await getProject(activeProjectId)
+      if (activeProject) {
+        return hydrateProjectImages(activeProject)
+      }
+    }
+
+    const legacyProject = await StorageService.loadProjectWithImages()
+    if (!legacyProject) {
+      return null
+    }
+
+    const savedProject = await saveProjectRecord(legacyProjectToRecord(legacyProject))
+    await setActiveProjectId(savedProject.id)
+    localStorage.removeItem(legacyStateKey())
+
+    return hydrateProjectImages(savedProject)
+  }
+
+  /**
    * 清除项目数据（保留 API 配置）
    */
   static clearProject(): boolean {
@@ -425,6 +498,7 @@ export const saveApiConfig = StorageService.saveApiConfig
 export const loadApiConfig = StorageService.loadApiConfig
 export const loadProject = StorageService.loadProject
 export const loadProjectWithImages = StorageService.loadProjectWithImages
+export const loadActiveProjectWithMigration = StorageService.loadActiveProjectWithMigration
 export const clearProject = StorageService.clearProject
 export const clearAll = StorageService.clearAll
 export const hasProject = StorageService.hasProject

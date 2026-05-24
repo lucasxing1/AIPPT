@@ -17,6 +17,32 @@ import {
   hasSlides
 } from '../../services/storageService'
 import { Slide, ApiConfig, GenerationConfig } from '../../types'
+import {
+  getActiveProjectId,
+  getProject,
+  saveProjectRecord,
+  setActiveProjectId
+} from '../../services/projectStore'
+import {
+  buildProjectRecord,
+  resetProjectStoreForTests
+} from '../../services/projectStore.test-utils'
+
+const LEGACY_STATE_KEY = 'aippt_persisted_state'
+const LEGACY_IMAGE_DB_NAME = 'aippt_slide_images'
+
+async function deleteIndexedDbForTests(name: string): Promise<void> {
+  if (typeof indexedDB === 'undefined') {
+    return
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(name)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error || new Error(`Failed to delete ${name}`))
+    request.onblocked = () => reject(new Error(`Blocked while deleting ${name}`))
+  })
+}
 
 /**
  * Feature: webui-frontend, Property 7: State Persistence Round-Trip
@@ -29,9 +55,10 @@ import { Slide, ApiConfig, GenerationConfig } from '../../types'
  * and then restoring should produce an equivalent state.
  */
 describe('State Persistence Property Tests', () => {
-  // Clear localStorage before each test
-  beforeEach(() => {
-    localStorage.clear()
+  // Clear localStorage and project databases before each test
+  beforeEach(async () => {
+    await resetProjectStoreForTests()
+    await deleteIndexedDbForTests(LEGACY_IMAGE_DB_NAME)
   })
 
   afterEach(() => {
@@ -306,6 +333,169 @@ describe('State Persistence Property Tests', () => {
     expect(restored?.slides[0].imageUrl).toBe(slide.imageUrl)
     expect(restored?.slides[0].imageBase64).toBe(slide.imageBase64)
     expect(setItemSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('migrates legacy currentProject into the durable active project store', async () => {
+    const imageBase64 = 'bWlncmF0ZWQtaW1hZ2U='
+    const slide: Slide = {
+      id: 'legacy-slide-1',
+      pageNumber: 1,
+      imageUrl: `data:image/png;base64,${imageBase64}`,
+      imageBase64,
+      prompt: 'Legacy prompt'
+    }
+    const generationConfig: GenerationConfig = {
+      pageCount: 1,
+      quality: '2K',
+      aspectRatio: '4:3',
+      language: 'English',
+      style: 'Editorial',
+      targetAudience: 'Operators',
+      userRequirements: 'Preserve this'
+    }
+
+    saveState({
+      version: 1,
+      apiConfig: {
+        apiKey: 'legacy-key',
+        baseUrl: 'https://api.example.test'
+      },
+      currentProject: {
+        fileContent: '# Legacy Deck',
+        fileName: 'legacy-deck.md',
+        slides: [slide],
+        generationConfig
+      }
+    })
+
+    const migrated = await StorageService.loadActiveProjectWithMigration()
+    const activeId = await getActiveProjectId()
+    const compactStored = activeId ? await getProject(activeId) : null
+
+    expect(migrated).not.toBeNull()
+    expect(migrated?.version).toBe(2)
+    expect(migrated?.id).toBe(activeId)
+    expect(migrated?.title).toBe('legacy-deck')
+    expect(migrated?.fileName).toBe('legacy-deck.md')
+    expect(migrated?.fileContent).toBe('# Legacy Deck')
+    expect(migrated?.generationConfig).toEqual(generationConfig)
+    expect(migrated?.slides).toHaveLength(1)
+    expect(migrated?.slides[0]).toMatchObject(slide)
+    expect(migrated?.lastCompletedSlides).toHaveLength(1)
+    expect(migrated?.lastCompletedSlides[0]).toMatchObject(slide)
+    expect(migrated?.workflow).toEqual({
+      status: 'idle',
+      outline: null,
+      slidePrompts: [],
+      expandedOutlinePages: [],
+      expandedDesignPages: [],
+      error: null
+    })
+    expect(migrated?.status).toBe('generated')
+    expect(migrated?.generationRunId).toBeNull()
+    expect(compactStored).not.toBeNull()
+    expect(compactStored?.id).toBe(migrated?.id)
+    expect(compactStored?.slides[0].imageBase64).toBeUndefined()
+    expect(localStorage.getItem(LEGACY_STATE_KEY)).toBeNull()
+  })
+
+  it('returns an existing active durable project without clearing unrelated legacy state', async () => {
+    const activeProject = await saveProjectRecord(buildProjectRecord({
+      id: 'durable-active',
+      title: 'Durable Active',
+      fileName: 'durable.md',
+      fileContent: '# Durable',
+      slides: [{
+        id: 'durable-slide-1',
+        pageNumber: 1,
+        imageUrl: 'data:image/png;base64,ZHVyYWJsZQ==',
+        imageBase64: 'ZHVyYWJsZQ==',
+        prompt: 'Durable prompt'
+      }],
+      lastCompletedSlides: []
+    }))
+    await setActiveProjectId(activeProject.id)
+
+    saveState({
+      version: 1,
+      apiConfig: {
+        apiKey: 'legacy-key',
+        baseUrl: ''
+      },
+      currentProject: {
+        fileContent: '# Unrelated Legacy',
+        fileName: 'legacy.md',
+        slides: [],
+        generationConfig: {
+          pageCount: 1,
+          quality: '1K',
+          aspectRatio: '16:9'
+        }
+      }
+    })
+    const legacyState = localStorage.getItem(LEGACY_STATE_KEY)
+
+    const restored = await StorageService.loadActiveProjectWithMigration()
+
+    expect(restored?.id).toBe('durable-active')
+    expect(restored?.fileName).toBe('durable.md')
+    expect(restored?.slides[0].imageBase64).toBe('ZHVyYWJsZQ==')
+    expect(restored?.slides[0].imageUrl).toBe('data:image/png;base64,ZHVyYWJsZQ==')
+    expect(localStorage.getItem(LEGACY_STATE_KEY)).toBe(legacyState)
+  })
+
+  it('migrates legacy fallback images from the old slide image database', async () => {
+    const originalSetItem = Storage.prototype.setItem
+    vi
+      .spyOn(Storage.prototype, 'setItem')
+      .mockImplementationOnce(() => {
+        throw new DOMException('Quota exceeded', 'QuotaExceededError')
+      })
+      .mockImplementation(function (this: Storage, key: string, value: string) {
+        return originalSetItem.call(this, key, value)
+      })
+
+    const imageBase64 = 'ZmFsbGJhY2staW1hZ2U='
+    const slide: Slide = {
+      id: 'fallback-slide-1',
+      pageNumber: 1,
+      imageUrl: `data:image/png;base64,${imageBase64}`,
+      imageBase64,
+      prompt: 'Fallback prompt'
+    }
+    const generationConfig: GenerationConfig = {
+      pageCount: 1,
+      quality: '1K',
+      aspectRatio: '16:9'
+    }
+
+    expect(saveProject('# Fallback', 'fallback.md', [slide], generationConfig)).toBe(true)
+    expect(loadProject()?.slides[0]).toMatchObject({
+      imageUrl: '',
+      imageStorageKey: 'fallback.md:fallback-slide-1'
+    })
+
+    const migrated = await StorageService.loadActiveProjectWithMigration()
+    const activeId = await getActiveProjectId()
+    const compactStored = activeId ? await getProject(activeId) : null
+
+    expect(migrated).not.toBeNull()
+    expect(migrated?.id).toBe(activeId)
+    expect(migrated?.fileName).toBe('fallback.md')
+    expect(migrated?.fileContent).toBe('# Fallback')
+    expect(migrated?.generationConfig).toEqual(generationConfig)
+    expect(migrated?.slides[0]).toMatchObject({
+      id: 'fallback-slide-1',
+      imageBase64,
+      imageUrl: `data:image/png;base64,${imageBase64}`
+    })
+    expect(migrated?.lastCompletedSlides[0]).toMatchObject({
+      id: 'fallback-slide-1',
+      imageBase64,
+      imageUrl: `data:image/png;base64,${imageBase64}`
+    })
+    expect(compactStored?.slides[0].imageBase64).toBeUndefined()
+    expect(localStorage.getItem(LEGACY_STATE_KEY)).toBeNull()
   })
 
   /**

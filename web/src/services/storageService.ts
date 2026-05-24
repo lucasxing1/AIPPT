@@ -134,6 +134,28 @@ export class StorageService {
     }
   }
 
+  private static writeApiConfig(config: ApiConfig, logError = true): boolean {
+    try {
+      localStorage.setItem(STORAGE_KEYS.API_CONFIG, JSON.stringify(config))
+      return true
+    } catch (error) {
+      if (logError) {
+        console.error('Failed to save API config to localStorage:', error)
+      }
+      return false
+    }
+  }
+
+  private static loadDedicatedApiConfig(): ApiConfig | null {
+    try {
+      const serialized = localStorage.getItem(STORAGE_KEYS.API_CONFIG)
+      return serialized ? JSON.parse(serialized) as ApiConfig : null
+    } catch (error) {
+      console.error('Failed to load API config from localStorage:', error)
+      return null
+    }
+  }
+
   private static extractBase64(slide: Slide): string {
     if (slide.imageBase64) {
       return slide.imageBase64
@@ -279,10 +301,9 @@ export class StorageService {
     generationConfig: GenerationConfig
   ): boolean {
     try {
-      const currentState = StorageService.loadState()
       const newState: PersistedState = {
         version: CURRENT_VERSION,
-        apiConfig: currentState?.apiConfig || DEFAULT_API_CONFIG,
+        apiConfig: StorageService.loadApiConfig(),
         currentProject: {
           fileContent,
           fileName,
@@ -319,12 +340,18 @@ export class StorageService {
   static saveApiConfig(config: ApiConfig): boolean {
     try {
       const currentState = StorageService.loadState()
-      const newState: PersistedState = {
-        version: CURRENT_VERSION,
-        apiConfig: config,
-        currentProject: currentState?.currentProject || null
+      const savedDedicatedConfig = StorageService.writeApiConfig(config)
+
+      if (!currentState) {
+        return savedDedicatedConfig
       }
-      return StorageService.saveState(newState)
+
+      const newState: PersistedState = {
+        ...currentState,
+        version: CURRENT_VERSION,
+        apiConfig: config
+      }
+      return StorageService.writeState(newState) && savedDedicatedConfig
     } catch (error) {
       console.error('Failed to save API config:', error)
       return false
@@ -335,6 +362,11 @@ export class StorageService {
    * 加载 API 配置
    */
   static loadApiConfig(): ApiConfig {
+    const dedicatedConfig = StorageService.loadDedicatedApiConfig()
+    if (dedicatedConfig) {
+      return dedicatedConfig
+    }
+
     const state = StorageService.loadState()
     return state?.apiConfig || DEFAULT_API_CONFIG
   }
@@ -396,6 +428,7 @@ export class StorageService {
       }
     }
 
+    const apiConfig = StorageService.loadApiConfig()
     const legacyProject = await StorageService.loadProjectWithImages()
     if (!legacyProject) {
       return null
@@ -403,6 +436,9 @@ export class StorageService {
 
     const savedProject = await saveProjectRecord(legacyProjectToRecord(legacyProject))
     await setActiveProjectId(savedProject.id)
+    if (!StorageService.writeApiConfig(apiConfig)) {
+      throw new Error('Failed to preserve legacy API config')
+    }
     localStorage.removeItem(legacyStateKey())
 
     return hydrateProjectImages(savedProject)

@@ -354,12 +354,14 @@ describe('State Persistence Property Tests', () => {
       userRequirements: 'Preserve this'
     }
 
+    const legacyApiConfig: ApiConfig = {
+      apiKey: 'legacy-key',
+      baseUrl: 'https://api.example.test'
+    }
+
     saveState({
       version: 1,
-      apiConfig: {
-        apiKey: 'legacy-key',
-        baseUrl: 'https://api.example.test'
-      },
+      apiConfig: legacyApiConfig,
       currentProject: {
         fileContent: '# Legacy Deck',
         fileName: 'legacy-deck.md',
@@ -397,6 +399,7 @@ describe('State Persistence Property Tests', () => {
     expect(compactStored?.id).toBe(migrated?.id)
     expect(compactStored?.slides[0].imageBase64).toBeUndefined()
     expect(localStorage.getItem(LEGACY_STATE_KEY)).toBeNull()
+    expect(loadApiConfig()).toEqual(legacyApiConfig)
   })
 
   it('returns an existing active durable project without clearing unrelated legacy state', async () => {

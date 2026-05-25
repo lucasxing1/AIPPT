@@ -447,6 +447,21 @@ describe('State Persistence Property Tests', () => {
     expect(localStorage.getItem(LEGACY_STATE_KEY)).toBe(legacyState)
   })
 
+  it('clears the active durable project so it is not restored again', async () => {
+    const activeProject = await saveProjectRecord(buildProjectRecord({
+      id: 'durable-to-clear',
+      title: 'Durable To Clear',
+      fileName: 'durable-to-clear.md',
+      fileContent: '# Durable To Clear'
+    }))
+    await setActiveProjectId(activeProject.id)
+
+    expect(clearProject()).toBe(true)
+
+    expect(await getActiveProjectId()).toBeNull()
+    expect(await StorageService.loadActiveProjectWithMigration()).toBeNull()
+  })
+
   it('migrates legacy fallback images from the old slide image database', async () => {
     const originalSetItem = Storage.prototype.setItem
     vi

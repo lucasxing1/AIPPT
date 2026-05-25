@@ -7,6 +7,7 @@
 
 import { Slide, ApiConfig, GenerationConfig, ProjectRecord, WorkflowState } from '../types'
 import {
+  clearActiveProjectId,
   createProjectId,
   getActiveProjectId,
   getProject,
@@ -456,6 +457,7 @@ export class StorageService {
         currentProject: null
       }
       StorageService.clearImageStore()
+      void clearActiveProjectId()
       return StorageService.saveState(newState)
     } catch (error) {
       console.error('Failed to clear project:', error)

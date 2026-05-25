@@ -96,10 +96,12 @@ function AppContent() {
   const handleRestoreSession = useCallback(() => {
     if (restoredProject) {
       restoreState({
+        projectId: restoredProject.projectId,
         fileContent: restoredProject.fileContent,
         fileName: restoredProject.fileName,
         slides: restoredProject.slides,
-        generationConfig: restoredProject.generationConfig
+        generationConfig: restoredProject.generationConfig,
+        workflow: restoredProject.workflow
       })
     }
     setShowRestoreDialog(false)
@@ -122,6 +124,7 @@ function AppContent() {
   const handleFileSelect = useCallback(async (file: File) => {
     const uploadResult = await uploadDocument(file)
     setFile(file, uploadResult.content, uploadResult.filename || file.name)
+    setConfirmedSlidePrompts(null)
   }, [setFile])
 
   const handleSlideSelect = useCallback((slideId: string) => {

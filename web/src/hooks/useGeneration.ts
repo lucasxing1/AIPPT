@@ -46,7 +46,8 @@ export function useGeneration() {
     }
     
     // 更新状态为生成中
-    startGenerationState()
+    const runId = `run-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    startGenerationState(runId)
     
     // 处理进度事件
     const handleProgress = (data: SSEProgressData) => {

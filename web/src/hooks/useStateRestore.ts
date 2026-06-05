@@ -8,7 +8,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { StorageService } from '../services/storageService'
-import { Slide, GenerationConfig, WorkflowState } from '../types'
+import { Slide, GenerationConfig, ProjectStatus, WorkflowState } from '../types'
 
 /**
  * 恢复的项目数据
@@ -20,6 +20,8 @@ export interface RestoredProject {
   slides: Slide[]
   generationConfig: GenerationConfig
   workflow: WorkflowState
+  status: ProjectStatus
+  lastCompletedSlides: Slide[]
 }
 
 function emptyWorkflow(): WorkflowState {
@@ -67,14 +69,16 @@ export function useStateRestore(): UseStateRestoreReturn {
         if (cancelled) return
         
         // 验证数据完整性
-        if (project && (project.fileContent || project.slides.length > 0)) {
+        if (project && (project.fileContent || project.slides.length > 0 || project.lastCompletedSlides.length > 0)) {
           setRestoredProject({
             projectId: project.id,
             fileContent: project.fileContent,
             fileName: project.fileName,
             slides: project.slides,
             generationConfig: project.generationConfig,
-            workflow: project.workflow
+            workflow: project.workflow,
+            status: project.status,
+            lastCompletedSlides: project.lastCompletedSlides
           })
           setHasRestoredData(true)
         }
@@ -146,7 +150,9 @@ export function loadSavedProject(): RestoredProject | null {
     fileName: project.fileName,
     slides: project.slides,
     generationConfig: project.generationConfig,
-    workflow: emptyWorkflow()
+    workflow: emptyWorkflow(),
+    status: project.slides.length > 0 ? 'generated' : 'draft',
+    lastCompletedSlides: project.slides
   }
 }
 

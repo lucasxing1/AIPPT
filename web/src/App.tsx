@@ -101,7 +101,9 @@ function AppContent() {
         fileName: restoredProject.fileName,
         slides: restoredProject.slides,
         generationConfig: restoredProject.generationConfig,
-        workflow: restoredProject.workflow
+        workflow: restoredProject.workflow,
+        status: restoredProject.status,
+        lastCompletedSlides: restoredProject.lastCompletedSlides
       })
     }
     setShowRestoreDialog(false)

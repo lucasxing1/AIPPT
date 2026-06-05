@@ -187,6 +187,36 @@ describe('AppState persistence reducer behavior', () => {
     })
   })
 
+  it('restores distinct current slides and last completed slide snapshot', () => {
+    const currentSlides = [
+      slide({ id: 'current-slide', pageNumber: 1, prompt: 'Current in-progress slide' })
+    ]
+    const completedSlides = [
+      slide({ id: 'completed-slide', pageNumber: 1, prompt: 'Last completed slide' })
+    ]
+
+    const result = appReducerForTests(
+      initialAppStateForTests,
+      {
+        type: 'RESTORE_STATE',
+        payload: {
+          projectId: 'project-distinct',
+          fileContent: '# restored',
+          fileName: 'restored.md',
+          slides: currentSlides,
+          generationConfig: TEST_GENERATION_CONFIG,
+          workflow: workflow(),
+          status: 'error',
+          lastCompletedSlides: completedSlides
+        }
+      }
+    )
+
+    expect(result.status).toBe('error')
+    expect(result.slides).toEqual(currentSlides)
+    expect(result.lastCompletedSlides).toEqual(completedSlides)
+  })
+
   it('clears project state on reset while preserving API configs', () => {
     const state = staleState({
       apiConfig: { apiKey: 'image-key', baseUrl: 'https://image.example.test' },

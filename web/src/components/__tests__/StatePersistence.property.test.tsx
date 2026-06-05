@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import * as fc from 'fast-check'
 import 'fake-indexeddb/auto'
+import { render, waitFor } from '@testing-library/react'
+import { useEffect } from 'react'
 import {
   StorageService,
   PersistedState,
@@ -25,11 +27,25 @@ import {
 } from '../../services/projectStore'
 import {
   buildProjectRecord,
+  buildSlide,
   resetProjectStoreForTests
 } from '../../services/projectStore.test-utils'
+import { RestoredProject, useStateRestore } from '../../hooks/useStateRestore'
 
 const LEGACY_STATE_KEY = 'aippt_persisted_state'
 const LEGACY_IMAGE_DB_NAME = 'aippt_slide_images'
+
+function RestoreProbe({ onRestore }: { onRestore: (project: RestoredProject) => void }) {
+  const { restoredProject } = useStateRestore()
+
+  useEffect(() => {
+    if (restoredProject) {
+      onRestore(restoredProject)
+    }
+  }, [onRestore, restoredProject])
+
+  return null
+}
 
 async function deleteIndexedDbForTests(name: string): Promise<void> {
   if (typeof indexedDB === 'undefined') {
@@ -460,6 +476,38 @@ describe('State Persistence Property Tests', () => {
 
     expect(await getActiveProjectId()).toBeNull()
     expect(await StorageService.loadActiveProjectWithMigration()).toBeNull()
+  })
+
+  it('maps durable project status and completed slide snapshot into restored project state', async () => {
+    const currentSlide = buildSlide({
+      id: 'current-slide',
+      pageNumber: 1,
+      prompt: 'Current in-progress slide'
+    })
+    const completedSlide = buildSlide({
+      id: 'completed-slide',
+      pageNumber: 1,
+      prompt: 'Last completed slide'
+    })
+    const activeProject = await saveProjectRecord(buildProjectRecord({
+      id: 'durable-distinct-snapshot',
+      status: 'error',
+      slides: [currentSlide],
+      lastCompletedSlides: [completedSlide]
+    }))
+    await setActiveProjectId(activeProject.id)
+    const onRestore = vi.fn()
+
+    render(<RestoreProbe onRestore={onRestore} />)
+
+    await waitFor(() => {
+      expect(onRestore).toHaveBeenCalled()
+    })
+
+    const restored = onRestore.mock.calls.at(-1)?.[0] as RestoredProject
+    expect(restored.status).toBe('error')
+    expect(restored.slides.map((slide) => slide.id)).toEqual(['current-slide'])
+    expect(restored.lastCompletedSlides.map((slide) => slide.id)).toEqual(['completed-slide'])
   })
 
   it('migrates legacy fallback images from the old slide image database', async () => {

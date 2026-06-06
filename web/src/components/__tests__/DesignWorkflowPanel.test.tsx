@@ -1,8 +1,9 @@
+import { useState } from 'react'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DesignWorkflowPanel from '../DesignWorkflowPanel'
 import { UiPreferencesProvider } from '../../contexts/UiPreferencesContext'
-import { ConfirmedSlidePrompt, DeckOutline, FullApiConfig, GenerationConfig } from '../../types'
+import { ConfirmedSlidePrompt, DeckOutline, FullApiConfig, GenerationConfig, WorkflowState } from '../../types'
 
 const fullApiConfig: FullApiConfig = {
   image: { apiKey: '', baseUrl: '', model: 'gpt-image-2' },
@@ -60,20 +61,58 @@ const prompts: ConfirmedSlidePrompt[] = [
   }
 ]
 
-function renderPanel(onPromptsReady = vi.fn()) {
+function emptyWorkflow(): WorkflowState {
+  return {
+    status: 'idle',
+    outline: null,
+    slidePrompts: [],
+    expandedOutlinePages: [],
+    expandedDesignPages: [],
+    error: null
+  }
+}
+
+function renderPanel({
+  initialWorkflow = emptyWorkflow(),
+  confirmedPrompts = null,
+  onWorkflowChange = vi.fn(),
+  onPromptsReady = vi.fn(),
+  onClearPrompts = vi.fn()
+}: {
+  initialWorkflow?: WorkflowState
+  confirmedPrompts?: ConfirmedSlidePrompt[] | null
+  onWorkflowChange?: ReturnType<typeof vi.fn>
+  onPromptsReady?: ReturnType<typeof vi.fn>
+  onClearPrompts?: ReturnType<typeof vi.fn>
+} = {}) {
+  function ControlledPanel() {
+    const [workflow, setWorkflow] = useState(initialWorkflow)
+
+    const handleWorkflowChange = (nextWorkflow: WorkflowState) => {
+      onWorkflowChange(nextWorkflow)
+      setWorkflow(nextWorkflow)
+    }
+
+    return (
+      <UiPreferencesProvider>
+        <DesignWorkflowPanel
+          fileContent="# L9"
+          fullApiConfig={fullApiConfig}
+          generationConfig={generationConfig}
+          workflow={workflow}
+          confirmedPrompts={confirmedPrompts}
+          onWorkflowChange={handleWorkflowChange}
+          onPromptsReady={onPromptsReady}
+          onClearPrompts={onClearPrompts}
+        />
+      </UiPreferencesProvider>
+    )
+  }
+
   render(
-    <UiPreferencesProvider>
-      <DesignWorkflowPanel
-        fileContent="# L9"
-        fullApiConfig={fullApiConfig}
-        generationConfig={generationConfig}
-        confirmedPrompts={null}
-        onPromptsReady={onPromptsReady}
-        onClearPrompts={vi.fn()}
-      />
-    </UiPreferencesProvider>
+    <ControlledPanel />
   )
-  return { onPromptsReady }
+  return { onWorkflowChange, onPromptsReady, onClearPrompts }
 }
 
 describe('DesignWorkflowPanel', () => {
@@ -127,5 +166,66 @@ describe('DesignWorkflowPanel', () => {
     expect(fetchMock.mock.calls[1][1]?.body).toContain('封面：技术实验')
     const promptRequest = JSON.parse(fetchMock.mock.calls[1][1]?.body as string)
     expect(promptRequest.outline.slides[0].key_points).toEqual(['L9', '实验'])
+  })
+
+  it('renders restored workflow and invalidates prompts when the restored outline changes', () => {
+    const restoredPrompt: ConfirmedSlidePrompt = {
+      page: 1,
+      title: 'Restored page',
+      content_summary: 'Restored summary',
+      display_content: 'Restored display',
+      prompt: 'Restored prompt'
+    }
+    const restoredWorkflow: WorkflowState = {
+      status: 'prompts_ready',
+      outline: {
+        title: 'Restored outline',
+        user_requirements: 'Restored requirements',
+        design_style: 'Restored style',
+        audience: 'Restored audience',
+        slides: [
+          {
+            page: 1,
+            title: 'Restored page',
+            narrative_goal: 'Restored goal',
+            key_points: ['Restored point'],
+            visual_direction: 'Restored visual direction'
+          }
+        ]
+      },
+      slidePrompts: [restoredPrompt],
+      expandedOutlinePages: [],
+      expandedDesignPages: [],
+      error: null
+    }
+    const onWorkflowChange = vi.fn()
+    const onClearPrompts = vi.fn()
+
+    renderPanel({
+      initialWorkflow: restoredWorkflow,
+      confirmedPrompts: [restoredPrompt],
+      onWorkflowChange,
+      onClearPrompts
+    })
+
+    expect(screen.getByLabelText('大纲标题')).toHaveValue('Restored outline')
+    expect(screen.getByLabelText('第 1 页标题')).toHaveValue('Restored page')
+    expect(screen.getByText('逐页设计预览')).toBeInTheDocument()
+    expect(screen.getByText('Restored summary')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '展开第 1 页设计' }))
+    expect(screen.getByText('Restored display')).toBeInTheDocument()
+
+    const workflowCallsBeforeEdit = onWorkflowChange.mock.calls.length
+    const clearCallsBeforeEdit = onClearPrompts.mock.calls.length
+    fireEvent.change(screen.getByLabelText('大纲标题'), { target: { value: 'Edited restored outline' } })
+
+    expect(onWorkflowChange.mock.calls.length).toBeGreaterThan(workflowCallsBeforeEdit)
+    expect(onClearPrompts.mock.calls.length).toBeGreaterThan(clearCallsBeforeEdit)
+    const updatedWorkflow = onWorkflowChange.mock.calls.at(-1)?.[0] as WorkflowState
+    expect(updatedWorkflow.status).toBe('outline_ready')
+    expect(updatedWorkflow.outline?.title).toBe('Edited restored outline')
+    expect(updatedWorkflow.slidePrompts).toEqual([])
+    expect(updatedWorkflow.expandedDesignPages).toEqual([])
   })
 })

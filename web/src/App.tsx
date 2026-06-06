@@ -37,6 +37,7 @@ function AppContent() {
     setFile,
     setFullApiConfig,
     setGenerationConfig,
+    setWorkflow,
     selectSlide,
     resetState,
     restoreState
@@ -105,6 +106,11 @@ function AppContent() {
         status: restoredProject.status,
         lastCompletedSlides: restoredProject.lastCompletedSlides
       })
+      setConfirmedSlidePrompts(
+        restoredProject.workflow.status === 'prompts_ready' && restoredProject.workflow.slidePrompts.length > 0
+          ? restoredProject.workflow.slidePrompts
+          : null
+      )
     }
     setShowRestoreDialog(false)
     dismissRestore()
@@ -261,7 +267,9 @@ function AppContent() {
             fileContent={state.fileContent}
             fullApiConfig={state.fullApiConfig}
             generationConfig={state.generationConfig}
+            workflow={state.workflow}
             confirmedPrompts={confirmedSlidePrompts}
+            onWorkflowChange={setWorkflow}
             onPromptsReady={handlePromptsReady}
             onClearPrompts={handleClearPrompts}
           >

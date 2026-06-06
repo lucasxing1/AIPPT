@@ -1,21 +1,15 @@
-import { ReactNode, useCallback, useEffect, useMemo, useState } from 'react'
-import { ConfirmedSlidePrompt, DeckOutline, FullApiConfig, GenerationConfig } from '../types'
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { ConfirmedSlidePrompt, DeckOutline, FullApiConfig, GenerationConfig, WorkflowState } from '../types'
 import { requestDeckOutline, requestSlidePrompts } from '../services/generateService'
 import { useUiPreferences } from '../contexts/useUiPreferences'
-
-type WorkflowStatus =
-  | 'idle'
-  | 'outline_loading'
-  | 'outline_ready'
-  | 'prompts_loading'
-  | 'prompts_ready'
-  | 'error'
 
 interface DesignWorkflowPanelProps {
   fileContent: string
   fullApiConfig: FullApiConfig
   generationConfig: GenerationConfig
+  workflow: WorkflowState
   confirmedPrompts: ConfirmedSlidePrompt[] | null
+  onWorkflowChange: (workflow: WorkflowState) => void
   onPromptsReady: (prompts: ConfirmedSlidePrompt[]) => void
   onClearPrompts: () => void
   children?: ReactNode
@@ -38,23 +32,38 @@ function cleanOutlineForSubmit(outline: DeckOutline): DeckOutline {
   }
 }
 
+function isResetWorkflow(workflow: WorkflowState): boolean {
+  return workflow.status === 'idle' &&
+    workflow.outline === null &&
+    workflow.slidePrompts.length === 0 &&
+    workflow.expandedOutlinePages.length === 0 &&
+    workflow.expandedDesignPages.length === 0 &&
+    workflow.error === null
+}
+
 function DesignWorkflowPanel({
   fileContent,
   fullApiConfig,
   generationConfig,
+  workflow,
   confirmedPrompts,
+  onWorkflowChange,
   onPromptsReady,
   onClearPrompts,
   children
 }: DesignWorkflowPanelProps) {
   const { t } = useUiPreferences()
-  const [status, setStatus] = useState<WorkflowStatus>('idle')
-  const [outline, setOutline] = useState<DeckOutline | null>(null)
-  const [slidePrompts, setSlidePrompts] = useState<ConfirmedSlidePrompt[]>([])
-  const [expandedOutlinePages, setExpandedOutlinePages] = useState<Set<number>>(new Set())
-  const [expandedDesignPages, setExpandedDesignPages] = useState<Set<number>>(new Set())
   const [isOpen, setIsOpen] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const previousResetKeyRef = useRef<string | null>(null)
+  const { status, outline, slidePrompts, error } = workflow
+  const expandedOutlinePages = useMemo(
+    () => new Set(workflow.expandedOutlinePages),
+    [workflow.expandedOutlinePages]
+  )
+  const expandedDesignPages = useMemo(
+    () => new Set(workflow.expandedDesignPages),
+    [workflow.expandedDesignPages]
+  )
 
   const resetKey = useMemo(
     () => JSON.stringify({
@@ -68,23 +77,48 @@ function DesignWorkflowPanel({
     [fileContent, generationConfig]
   )
 
+  const updateWorkflow = useCallback((updates: Partial<WorkflowState>) => {
+    onWorkflowChange({ ...workflow, ...updates })
+  }, [onWorkflowChange, workflow])
+
   useEffect(() => {
-    setStatus('idle')
-    setOutline(null)
-    setSlidePrompts([])
-    setExpandedOutlinePages(new Set())
-    setExpandedDesignPages(new Set())
-    setError(null)
-    onClearPrompts()
-  }, [resetKey, onClearPrompts])
+    if (previousResetKeyRef.current === null) {
+      previousResetKeyRef.current = resetKey
+      return
+    }
+
+    if (previousResetKeyRef.current === resetKey) {
+      return
+    }
+
+    previousResetKeyRef.current = resetKey
+    if (!isResetWorkflow(workflow)) {
+      onWorkflowChange({
+        ...workflow,
+        status: 'idle',
+        outline: null,
+        slidePrompts: [],
+        expandedOutlinePages: [],
+        expandedDesignPages: [],
+        error: null
+      })
+    }
+    if (workflow.slidePrompts.length > 0 || confirmedPrompts?.length) {
+      onClearPrompts()
+    }
+  }, [confirmedPrompts?.length, onClearPrompts, onWorkflowChange, resetKey, workflow])
 
   const canPlan = fileContent.trim().length > 0 && status !== 'outline_loading' && status !== 'prompts_loading'
-  const hasConfirmedPrompts = Boolean(confirmedPrompts?.length)
+  const hasConfirmedPrompts = Boolean(confirmedPrompts?.length || slidePrompts.length)
 
   const handleGenerateOutline = useCallback(async () => {
     if (!canPlan) return
-    setStatus('outline_loading')
-    setError(null)
+    updateWorkflow({
+      status: 'outline_loading',
+      slidePrompts: [],
+      expandedDesignPages: [],
+      error: null
+    })
     onClearPrompts()
 
     try {
@@ -93,21 +127,32 @@ function DesignWorkflowPanel({
         fullApiConfig,
         generationConfig
       })
-      setOutline(nextOutline)
-      setSlidePrompts([])
-      setExpandedOutlinePages(new Set())
-      setExpandedDesignPages(new Set())
-      setStatus('outline_ready')
+      updateWorkflow({
+        status: 'outline_ready',
+        outline: nextOutline,
+        slidePrompts: [],
+        expandedOutlinePages: [],
+        expandedDesignPages: [],
+        error: null
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('workflow.outlineFailed'))
-      setStatus('error')
+      updateWorkflow({
+        status: 'error',
+        slidePrompts: [],
+        expandedDesignPages: [],
+        error: err instanceof Error ? err.message : t('workflow.outlineFailed')
+      })
     }
-  }, [canPlan, fileContent, fullApiConfig, generationConfig, onClearPrompts, t])
+  }, [canPlan, fileContent, fullApiConfig, generationConfig, onClearPrompts, t, updateWorkflow])
 
   const handleGeneratePrompts = useCallback(async () => {
     if (!outline) return
-    setStatus('prompts_loading')
-    setError(null)
+    updateWorkflow({
+      status: 'prompts_loading',
+      slidePrompts: [],
+      expandedDesignPages: [],
+      error: null
+    })
     onClearPrompts()
 
     try {
@@ -122,76 +167,90 @@ function DesignWorkflowPanel({
         generationConfig,
         outline: parsedOutline
       })
-      setOutline(parsedOutline)
-      setSlidePrompts(prompts)
+      updateWorkflow({
+        status: 'prompts_ready',
+        outline: parsedOutline,
+        slidePrompts: prompts,
+        expandedDesignPages: [],
+        error: null
+      })
       onPromptsReady(prompts)
-      setStatus('prompts_ready')
     } catch (err) {
-      setError(err instanceof Error ? err.message : t('workflow.promptsFailed'))
-      setStatus('outline_ready')
+      updateWorkflow({
+        status: 'outline_ready',
+        slidePrompts: [],
+        expandedDesignPages: [],
+        error: err instanceof Error ? err.message : t('workflow.promptsFailed')
+      })
     }
-  }, [fileContent, fullApiConfig, generationConfig, outline, onClearPrompts, onPromptsReady, t])
+  }, [fileContent, fullApiConfig, generationConfig, outline, onClearPrompts, onPromptsReady, t, updateWorkflow])
 
-  const markOutlineDirty = useCallback(() => {
-    if (slidePrompts.length > 0 || hasConfirmedPrompts) {
-      setSlidePrompts([])
+  const markOutlineDirty = useCallback((updates: Partial<WorkflowState> = {}) => {
+    if (slidePrompts.length > 0 || confirmedPrompts?.length) {
       onClearPrompts()
-      setExpandedDesignPages(new Set())
-      setStatus('outline_ready')
     }
-  }, [hasConfirmedPrompts, onClearPrompts, slidePrompts.length])
+    updateWorkflow({
+      status: 'outline_ready',
+      slidePrompts: [],
+      expandedDesignPages: [],
+      error: null,
+      ...updates
+    })
+  }, [confirmedPrompts?.length, onClearPrompts, slidePrompts.length, updateWorkflow])
 
   const updateOutlineField = useCallback((field: keyof Omit<DeckOutline, 'slides'>, value: string) => {
-    markOutlineDirty()
-    setOutline((current) => current ? { ...current, [field]: value } : current)
-  }, [markOutlineDirty])
+    if (!outline) return
+    markOutlineDirty({
+      outline: { ...outline, [field]: value }
+    })
+  }, [markOutlineDirty, outline])
 
   const updateSlideField = useCallback((
     page: number,
     field: 'title' | 'narrative_goal' | 'visual_direction',
     value: string
   ) => {
-    markOutlineDirty()
-    setOutline((current) => current
-      ? {
-          ...current,
-          slides: current.slides.map((slide) => (
-            slide.page === page ? { ...slide, [field]: value } : slide
-          ))
-        }
-      : current)
-  }, [markOutlineDirty])
+    if (!outline) return
+    markOutlineDirty({
+      outline: {
+        ...outline,
+        slides: outline.slides.map((slide) => (
+          slide.page === page ? { ...slide, [field]: value } : slide
+        ))
+      }
+    })
+  }, [markOutlineDirty, outline])
 
   const updateSlideKeyPoints = useCallback((page: number, value: string) => {
-    markOutlineDirty()
+    if (!outline) return
     const keyPoints = value.split('\n')
-    setOutline((current) => current
-      ? {
-          ...current,
-          slides: current.slides.map((slide) => (
-            slide.page === page ? { ...slide, key_points: keyPoints } : slide
-          ))
-        }
-      : current)
-  }, [markOutlineDirty])
+    markOutlineDirty({
+      outline: {
+        ...outline,
+        slides: outline.slides.map((slide) => (
+          slide.page === page ? { ...slide, key_points: keyPoints } : slide
+        ))
+      }
+    })
+  }, [markOutlineDirty, outline])
 
   const toggleOutlinePage = useCallback((page: number) => {
-    setExpandedOutlinePages((current) => {
-      const next = new Set(current)
-      if (next.has(page)) next.delete(page)
-      else next.add(page)
-      return next
+    const next = new Set(expandedOutlinePages)
+    if (next.has(page)) next.delete(page)
+    else next.add(page)
+    updateWorkflow({
+      expandedOutlinePages: Array.from(next).sort((left, right) => left - right)
     })
-  }, [])
+  }, [expandedOutlinePages, updateWorkflow])
 
   const toggleDesignPage = useCallback((page: number) => {
-    setExpandedDesignPages((current) => {
-      const next = new Set(current)
-      if (next.has(page)) next.delete(page)
-      else next.add(page)
-      return next
+    const next = new Set(expandedDesignPages)
+    if (next.has(page)) next.delete(page)
+    else next.add(page)
+    updateWorkflow({
+      expandedDesignPages: Array.from(next).sort((left, right) => left - right)
     })
-  }, [])
+  }, [expandedDesignPages, updateWorkflow])
 
   return (
     <section className="rounded-xl border border-[var(--card-border)] bg-[var(--card-bg)] overflow-hidden shadow-sm">

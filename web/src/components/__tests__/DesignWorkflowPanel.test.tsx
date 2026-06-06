@@ -72,6 +72,15 @@ function emptyWorkflow(): WorkflowState {
   }
 }
 
+function isEmptyWorkflowState(workflow: WorkflowState): boolean {
+  return workflow.status === 'idle' &&
+    workflow.outline === null &&
+    workflow.slidePrompts.length === 0 &&
+    workflow.expandedOutlinePages.length === 0 &&
+    workflow.expandedDesignPages.length === 0 &&
+    workflow.error === null
+}
+
 function renderPanel({
   initialWorkflow = emptyWorkflow(),
   confirmedPrompts = null,
@@ -227,5 +236,87 @@ describe('DesignWorkflowPanel', () => {
     expect(updatedWorkflow.outline?.title).toBe('Edited restored outline')
     expect(updatedWorkflow.slidePrompts).toEqual([])
     expect(updatedWorkflow.expandedDesignPages).toEqual([])
+  })
+
+  it('preserves restored workflow when the panel hydrates from an initially empty app shell', async () => {
+    const restoredPrompt: ConfirmedSlidePrompt = {
+      page: 1,
+      title: 'Hydrated page',
+      content_summary: 'Hydrated summary',
+      display_content: 'Hydrated display',
+      prompt: 'Hydrated prompt'
+    }
+    const restoredWorkflow: WorkflowState = {
+      status: 'prompts_ready',
+      outline: {
+        title: 'Hydrated outline',
+        user_requirements: 'Hydrated requirements',
+        design_style: 'Hydrated style',
+        audience: 'Hydrated audience',
+        slides: [
+          {
+            page: 1,
+            title: 'Hydrated page',
+            narrative_goal: 'Hydrated goal',
+            key_points: ['Hydrated point'],
+            visual_direction: 'Hydrated visual direction'
+          }
+        ]
+      },
+      slidePrompts: [restoredPrompt],
+      expandedOutlinePages: [],
+      expandedDesignPages: [],
+      error: null
+    }
+    const restoredGenerationConfig: GenerationConfig = {
+      ...generationConfig,
+      pageCount: 1
+    }
+    const onWorkflowChange = vi.fn()
+
+    function HydratingPanel() {
+      const [fileContent, setFileContent] = useState('')
+      const [currentGenerationConfig, setCurrentGenerationConfig] = useState(generationConfig)
+      const [workflow, setWorkflow] = useState(emptyWorkflow())
+      const [confirmedPrompts, setConfirmedPrompts] = useState<ConfirmedSlidePrompt[] | null>(null)
+
+      const handleWorkflowChange = (nextWorkflow: WorkflowState) => {
+        onWorkflowChange(nextWorkflow)
+        setWorkflow(nextWorkflow)
+      }
+
+      const restoreWorkflow = () => {
+        setFileContent('# L9')
+        setCurrentGenerationConfig(restoredGenerationConfig)
+        setWorkflow(restoredWorkflow)
+        setConfirmedPrompts([restoredPrompt])
+      }
+
+      return (
+        <UiPreferencesProvider>
+          <button type="button" onClick={restoreWorkflow}>restore</button>
+          <DesignWorkflowPanel
+            fileContent={fileContent}
+            fullApiConfig={fullApiConfig}
+            generationConfig={currentGenerationConfig}
+            workflow={workflow}
+            confirmedPrompts={confirmedPrompts}
+            onWorkflowChange={handleWorkflowChange}
+            onPromptsReady={setConfirmedPrompts}
+            onClearPrompts={() => setConfirmedPrompts(null)}
+          />
+        </UiPreferencesProvider>
+      )
+    }
+
+    render(<HydratingPanel />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'restore' }))
+
+    expect(await screen.findByLabelText('大纲标题')).toHaveValue('Hydrated outline')
+    expect(screen.getByLabelText('第 1 页标题')).toHaveValue('Hydrated page')
+    expect(screen.getByText('逐页设计预览')).toBeInTheDocument()
+    expect(screen.getByText('Hydrated summary')).toBeInTheDocument()
+    expect(onWorkflowChange.mock.calls.some(([nextWorkflow]) => isEmptyWorkflowState(nextWorkflow))).toBe(false)
   })
 })

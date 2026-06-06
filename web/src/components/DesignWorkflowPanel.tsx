@@ -55,6 +55,7 @@ function DesignWorkflowPanel({
   const { t } = useUiPreferences()
   const [isOpen, setIsOpen] = useState(true)
   const previousResetKeyRef = useRef<string | null>(null)
+  const previousWorkflowWasResetRef = useRef<boolean | null>(null)
   const { status, outline, slidePrompts, error } = workflow
   const expandedOutlinePages = useMemo(
     () => new Set(workflow.expandedOutlinePages),
@@ -82,17 +83,28 @@ function DesignWorkflowPanel({
   }, [onWorkflowChange, workflow])
 
   useEffect(() => {
+    const workflowIsReset = isResetWorkflow(workflow)
+
     if (previousResetKeyRef.current === null) {
       previousResetKeyRef.current = resetKey
+      previousWorkflowWasResetRef.current = workflowIsReset
       return
     }
 
     if (previousResetKeyRef.current === resetKey) {
+      previousWorkflowWasResetRef.current = workflowIsReset
       return
     }
 
+    const wasHydratingWorkflow = previousWorkflowWasResetRef.current === true && !workflowIsReset
     previousResetKeyRef.current = resetKey
-    if (!isResetWorkflow(workflow)) {
+    previousWorkflowWasResetRef.current = workflowIsReset
+
+    if (wasHydratingWorkflow) {
+      return
+    }
+
+    if (!workflowIsReset) {
       onWorkflowChange({
         ...workflow,
         status: 'idle',

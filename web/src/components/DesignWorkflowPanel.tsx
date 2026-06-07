@@ -56,6 +56,10 @@ function DesignWorkflowPanel({
   const [isOpen, setIsOpen] = useState(true)
   const previousResetKeyRef = useRef<string | null>(null)
   const previousWorkflowWasResetRef = useRef<boolean | null>(null)
+  const latestWorkflowRef = useRef(workflow)
+  const latestResetKeyRef = useRef<string | null>(null)
+  const outlineRequestIdRef = useRef(0)
+  const promptRequestIdRef = useRef(0)
   const { status, outline, slidePrompts, error } = workflow
   const expandedOutlinePages = useMemo(
     () => new Set(workflow.expandedOutlinePages),
@@ -70,6 +74,8 @@ function DesignWorkflowPanel({
     () => JSON.stringify({
       content: fileContent,
       pages: generationConfig.pageCount,
+      quality: generationConfig.quality,
+      aspectRatio: generationConfig.aspectRatio,
       language: generationConfig.language,
       style: generationConfig.style,
       audience: generationConfig.targetAudience,
@@ -78,15 +84,26 @@ function DesignWorkflowPanel({
     [fileContent, generationConfig]
   )
 
+  useEffect(() => {
+    latestWorkflowRef.current = workflow
+  }, [workflow])
+
+  useEffect(() => {
+    latestResetKeyRef.current = resetKey
+  }, [resetKey])
+
   const updateWorkflow = useCallback((updates: Partial<WorkflowState>) => {
-    onWorkflowChange({ ...workflow, ...updates })
-  }, [onWorkflowChange, workflow])
+    const nextWorkflow = { ...latestWorkflowRef.current, ...updates }
+    latestWorkflowRef.current = nextWorkflow
+    onWorkflowChange(nextWorkflow)
+  }, [onWorkflowChange])
 
   useEffect(() => {
     const workflowIsReset = isResetWorkflow(workflow)
 
     if (previousResetKeyRef.current === null) {
       previousResetKeyRef.current = resetKey
+      latestResetKeyRef.current = resetKey
       previousWorkflowWasResetRef.current = workflowIsReset
       return
     }
@@ -98,6 +115,7 @@ function DesignWorkflowPanel({
 
     const wasHydratingWorkflow = previousWorkflowWasResetRef.current === true && !workflowIsReset
     previousResetKeyRef.current = resetKey
+    latestResetKeyRef.current = resetKey
     previousWorkflowWasResetRef.current = workflowIsReset
 
     if (wasHydratingWorkflow) {
@@ -105,7 +123,7 @@ function DesignWorkflowPanel({
     }
 
     if (!workflowIsReset) {
-      onWorkflowChange({
+      const resetWorkflow: WorkflowState = {
         ...workflow,
         status: 'idle',
         outline: null,
@@ -113,7 +131,9 @@ function DesignWorkflowPanel({
         expandedOutlinePages: [],
         expandedDesignPages: [],
         error: null
-      })
+      }
+      latestWorkflowRef.current = resetWorkflow
+      onWorkflowChange(resetWorkflow)
     }
     if (workflow.slidePrompts.length > 0 || confirmedPrompts?.length) {
       onClearPrompts()
@@ -125,6 +145,9 @@ function DesignWorkflowPanel({
 
   const handleGenerateOutline = useCallback(async () => {
     if (!canPlan) return
+    const requestId = outlineRequestIdRef.current + 1
+    outlineRequestIdRef.current = requestId
+    const requestResetKey = resetKey
     updateWorkflow({
       status: 'outline_loading',
       slidePrompts: [],
@@ -139,6 +162,9 @@ function DesignWorkflowPanel({
         fullApiConfig,
         generationConfig
       })
+      if (outlineRequestIdRef.current !== requestId || latestResetKeyRef.current !== requestResetKey) {
+        return
+      }
       updateWorkflow({
         status: 'outline_ready',
         outline: nextOutline,
@@ -148,6 +174,9 @@ function DesignWorkflowPanel({
         error: null
       })
     } catch (err) {
+      if (outlineRequestIdRef.current !== requestId || latestResetKeyRef.current !== requestResetKey) {
+        return
+      }
       updateWorkflow({
         status: 'error',
         slidePrompts: [],
@@ -155,10 +184,13 @@ function DesignWorkflowPanel({
         error: err instanceof Error ? err.message : t('workflow.outlineFailed')
       })
     }
-  }, [canPlan, fileContent, fullApiConfig, generationConfig, onClearPrompts, t, updateWorkflow])
+  }, [canPlan, fileContent, fullApiConfig, generationConfig, onClearPrompts, resetKey, t, updateWorkflow])
 
   const handleGeneratePrompts = useCallback(async () => {
     if (!outline) return
+    const requestId = promptRequestIdRef.current + 1
+    promptRequestIdRef.current = requestId
+    const requestResetKey = resetKey
     updateWorkflow({
       status: 'prompts_loading',
       slidePrompts: [],
@@ -179,6 +211,13 @@ function DesignWorkflowPanel({
         generationConfig,
         outline: parsedOutline
       })
+      if (
+        promptRequestIdRef.current !== requestId ||
+        latestResetKeyRef.current !== requestResetKey ||
+        latestWorkflowRef.current.status !== 'prompts_loading'
+      ) {
+        return
+      }
       updateWorkflow({
         status: 'prompts_ready',
         outline: parsedOutline,
@@ -188,6 +227,13 @@ function DesignWorkflowPanel({
       })
       onPromptsReady(prompts)
     } catch (err) {
+      if (
+        promptRequestIdRef.current !== requestId ||
+        latestResetKeyRef.current !== requestResetKey ||
+        latestWorkflowRef.current.status !== 'prompts_loading'
+      ) {
+        return
+      }
       updateWorkflow({
         status: 'outline_ready',
         slidePrompts: [],
@@ -195,7 +241,7 @@ function DesignWorkflowPanel({
         error: err instanceof Error ? err.message : t('workflow.promptsFailed')
       })
     }
-  }, [fileContent, fullApiConfig, generationConfig, outline, onClearPrompts, onPromptsReady, t, updateWorkflow])
+  }, [fileContent, fullApiConfig, generationConfig, outline, onClearPrompts, onPromptsReady, resetKey, t, updateWorkflow])
 
   const markOutlineDirty = useCallback((updates: Partial<WorkflowState> = {}) => {
     if (slidePrompts.length > 0 || confirmedPrompts?.length) {

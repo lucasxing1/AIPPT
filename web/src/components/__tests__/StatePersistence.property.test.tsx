@@ -3,6 +3,7 @@ import * as fc from 'fast-check'
 import 'fake-indexeddb/auto'
 import { render, waitFor } from '@testing-library/react'
 import { useEffect } from 'react'
+import { useAutoSave } from '../../hooks/useAutoSave'
 import {
   StorageService,
   PersistedState,
@@ -18,7 +19,7 @@ import {
   hasProject,
   hasSlides
 } from '../../services/storageService'
-import { Slide, ApiConfig, GenerationConfig } from '../../types'
+import { Slide, ApiConfig, GenerationConfig, ProjectStatus, WorkflowState } from '../../types'
 import {
   getActiveProjectId,
   getProject,
@@ -26,8 +27,11 @@ import {
   setActiveProjectId
 } from '../../services/projectStore'
 import {
+  buildDeckOutline,
   buildProjectRecord,
   buildSlide,
+  buildSlidePrompt,
+  TEST_GENERATION_CONFIG,
   resetProjectStoreForTests
 } from '../../services/projectStore.test-utils'
 import { RestoredProject, useStateRestore } from '../../hooks/useStateRestore'
@@ -43,6 +47,36 @@ function RestoreProbe({ onRestore }: { onRestore: (project: RestoredProject) => 
       onRestore(restoredProject)
     }
   }, [onRestore, restoredProject])
+
+  return null
+}
+
+function AutoSaveWorkflowProbe({
+  workflow,
+  status,
+  onSaved
+}: {
+  workflow: WorkflowState
+  status: ProjectStatus
+  onSaved: () => void
+}) {
+  const { saveNow } = useAutoSave({
+    projectId: null,
+    fileContent: '# Workflow',
+    fileName: 'workflow.md',
+    slides: [],
+    lastCompletedSlides: [],
+    generationConfig: TEST_GENERATION_CONFIG,
+    workflow,
+    status,
+    generationRunId: null,
+    onProjectIdChange: vi.fn(),
+    enabled: false
+  })
+
+  useEffect(() => {
+    void Promise.resolve(saveNow()).then(onSaved)
+  }, [onSaved, saveNow])
 
   return null
 }
@@ -349,6 +383,46 @@ describe('State Persistence Property Tests', () => {
     expect(restored?.slides[0].imageUrl).toBe(slide.imageUrl)
     expect(restored?.slides[0].imageBase64).toBe(slide.imageBase64)
     expect(setItemSpy).toHaveBeenCalledTimes(2)
+  })
+
+  it('autosaves confirmed workflow into the durable restore path', async () => {
+    const workflow: WorkflowState = {
+      status: 'prompts_ready',
+      outline: buildDeckOutline({
+        title: 'Autosaved workflow outline'
+      }),
+      slidePrompts: [
+        buildSlidePrompt({
+          title: 'Autosaved workflow page',
+          content_summary: 'Autosaved workflow summary',
+          display_content: 'Autosaved workflow display',
+          prompt: 'Autosaved workflow prompt'
+        })
+      ],
+      expandedOutlinePages: [1],
+      expandedDesignPages: [1],
+      error: null
+    }
+    const onSaved = vi.fn()
+
+    render(
+      <AutoSaveWorkflowProbe
+        workflow={workflow}
+        status="prompts_ready"
+        onSaved={onSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled()
+    })
+
+    const activeProjectId = await getActiveProjectId()
+    expect(activeProjectId).toBeTruthy()
+    const restored = await StorageService.loadActiveProjectWithMigration()
+    expect(restored?.fileName).toBe('workflow.md')
+    expect(restored?.workflow).toEqual(workflow)
+    expect(restored?.status).toBe('prompts_ready')
   })
 
   it('migrates legacy currentProject into the durable active project store', async () => {

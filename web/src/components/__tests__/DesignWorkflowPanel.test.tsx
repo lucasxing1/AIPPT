@@ -81,6 +81,16 @@ function isEmptyWorkflowState(workflow: WorkflowState): boolean {
     workflow.error === null
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve
+    reject = promiseReject
+  })
+  return { promise, resolve, reject }
+}
+
 function renderPanel({
   initialWorkflow = emptyWorkflow(),
   confirmedPrompts = null,
@@ -318,5 +328,116 @@ describe('DesignWorkflowPanel', () => {
     expect(screen.getByText('逐页设计预览')).toBeInTheDocument()
     expect(screen.getByText('Hydrated summary')).toBeInTheDocument()
     expect(onWorkflowChange.mock.calls.some(([nextWorkflow]) => isEmptyWorkflowState(nextWorkflow))).toBe(false)
+  })
+
+  it('ignores stale prompt responses after the outline changes while prompts are loading', async () => {
+    const promptResponse = createDeferred<{ success: true; slide_prompts: ConfirmedSlidePrompt[] }>()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => promptResponse.promise
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const onPromptsReady = vi.fn()
+
+    renderPanel({
+      initialWorkflow: {
+        ...emptyWorkflow(),
+        status: 'outline_ready',
+        outline
+      },
+      onPromptsReady
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '确认大纲并生成逐页设计' }))
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.change(screen.getByLabelText('大纲标题'), { target: { value: 'Edited while loading' } })
+    promptResponse.resolve({ success: true, slide_prompts: prompts })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('大纲标题')).toHaveValue('Edited while loading')
+    })
+    expect(screen.queryByText('逐页设计预览')).not.toBeInTheDocument()
+    expect(onPromptsReady).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['quality', { quality: '2K' as const }],
+    ['aspect ratio', { aspectRatio: '4:3' as const }]
+  ])('resets workflow when %s changes', async (_label, nextConfig) => {
+    const restoredPrompt: ConfirmedSlidePrompt = {
+      page: 1,
+      title: 'Config page',
+      content_summary: 'Config summary',
+      display_content: 'Config display',
+      prompt: 'Config prompt'
+    }
+    const restoredWorkflow: WorkflowState = {
+      status: 'prompts_ready',
+      outline: {
+        title: 'Config outline',
+        user_requirements: 'Config requirements',
+        design_style: 'Config style',
+        audience: 'Config audience',
+        slides: [
+          {
+            page: 1,
+            title: 'Config page',
+            narrative_goal: 'Config goal',
+            key_points: ['Config point'],
+            visual_direction: 'Config visual direction'
+          }
+        ]
+      },
+      slidePrompts: [restoredPrompt],
+      expandedOutlinePages: [],
+      expandedDesignPages: [],
+      error: null
+    }
+    const onWorkflowChange = vi.fn()
+    const onClearPrompts = vi.fn()
+
+    function ConfigChangingPanel() {
+      const [currentGenerationConfig, setCurrentGenerationConfig] = useState(generationConfig)
+      const [workflow, setWorkflow] = useState(restoredWorkflow)
+
+      const handleWorkflowChange = (nextWorkflow: WorkflowState) => {
+        onWorkflowChange(nextWorkflow)
+        setWorkflow(nextWorkflow)
+      }
+
+      return (
+        <UiPreferencesProvider>
+          <button
+            type="button"
+            onClick={() => setCurrentGenerationConfig({ ...generationConfig, ...nextConfig })}
+          >
+            change config
+          </button>
+          <DesignWorkflowPanel
+            fileContent="# L9"
+            fullApiConfig={fullApiConfig}
+            generationConfig={currentGenerationConfig}
+            workflow={workflow}
+            confirmedPrompts={[restoredPrompt]}
+            onWorkflowChange={handleWorkflowChange}
+            onPromptsReady={vi.fn()}
+            onClearPrompts={onClearPrompts}
+          />
+        </UiPreferencesProvider>
+      )
+    }
+
+    render(<ConfigChangingPanel />)
+    expect(screen.getByLabelText('大纲标题')).toHaveValue('Config outline')
+
+    fireEvent.click(screen.getByRole('button', { name: 'change config' }))
+
+    await waitFor(() => {
+      expect(onWorkflowChange.mock.calls.some(([nextWorkflow]) => isEmptyWorkflowState(nextWorkflow))).toBe(true)
+    })
+    expect(onClearPrompts).toHaveBeenCalled()
   })
 })

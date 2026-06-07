@@ -40,7 +40,8 @@ function AppContent() {
     setWorkflow,
     selectSlide,
     resetState,
-    restoreState
+    restoreState,
+    setProjectId
   } = useAppState()
   
   const { generate, isGenerating, progress, error, slides } = useGeneration()
@@ -86,10 +87,16 @@ function AppContent() {
 
   // 自动保存
   useAutoSave({
+    projectId: state.projectId,
     fileContent: state.fileContent,
     fileName: state.fileName,
     slides: slides,
+    lastCompletedSlides: state.lastCompletedSlides,
     generationConfig: state.generationConfig,
+    workflow: state.workflow,
+    status: state.status,
+    generationRunId: state.generationRunId,
+    onProjectIdChange: setProjectId,
     enabled: !isRestoring && !showRestoreDialog
   })
 

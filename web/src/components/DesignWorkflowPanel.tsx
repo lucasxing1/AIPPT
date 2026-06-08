@@ -162,7 +162,11 @@ function DesignWorkflowPanel({
         fullApiConfig,
         generationConfig
       })
-      if (outlineRequestIdRef.current !== requestId || latestResetKeyRef.current !== requestResetKey) {
+      if (
+        outlineRequestIdRef.current !== requestId ||
+        latestResetKeyRef.current !== requestResetKey ||
+        latestWorkflowRef.current.status !== 'outline_loading'
+      ) {
         return
       }
       updateWorkflow({
@@ -174,7 +178,11 @@ function DesignWorkflowPanel({
         error: null
       })
     } catch (err) {
-      if (outlineRequestIdRef.current !== requestId || latestResetKeyRef.current !== requestResetKey) {
+      if (
+        outlineRequestIdRef.current !== requestId ||
+        latestResetKeyRef.current !== requestResetKey ||
+        latestWorkflowRef.current.status !== 'outline_loading'
+      ) {
         return
       }
       updateWorkflow({

@@ -363,6 +363,42 @@ describe('DesignWorkflowPanel', () => {
     expect(onPromptsReady).not.toHaveBeenCalled()
   })
 
+  it('ignores stale outline regeneration after the visible outline changes while loading', async () => {
+    const outlineResponse = createDeferred<{ success: true; outline: DeckOutline }>()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => outlineResponse.promise
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderPanel({
+      initialWorkflow: {
+        ...emptyWorkflow(),
+        status: 'outline_ready',
+        outline
+      }
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '生成设计大纲' }))
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+    })
+
+    fireEvent.change(screen.getByLabelText('大纲标题'), { target: { value: 'Edited while outline loads' } })
+    outlineResponse.resolve({
+      success: true,
+      outline: {
+        ...outline,
+        title: 'Stale regenerated outline'
+      }
+    })
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('大纲标题')).toHaveValue('Edited while outline loads')
+    })
+    expect(screen.queryByDisplayValue('Stale regenerated outline')).not.toBeInTheDocument()
+  })
+
   it.each([
     ['quality', { quality: '2K' as const }],
     ['aspect ratio', { aspectRatio: '4:3' as const }]

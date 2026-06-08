@@ -1,0 +1,337 @@
+import { render, waitFor } from '@testing-library/react'
+import 'fake-indexeddb/auto'
+import { useEffect } from 'react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useAutoSave } from '../../hooks/useAutoSave'
+import {
+  getActiveProjectId,
+  getProject,
+  hydrateProjectImages,
+  saveProjectRecord
+} from '../../services/projectStore'
+import {
+  buildProjectRecord,
+  buildSlide,
+  EMPTY_WORKFLOW_STATE,
+  listStoredAssets,
+  resetProjectStoreForTests,
+  TEST_GENERATION_CONFIG
+} from '../../services/projectStore.test-utils'
+import type { ProjectStatus, Slide, WorkflowState } from '../../types'
+
+interface AutoSaveProbeProps {
+  projectId: string | null
+  fileContent?: string
+  fileName?: string
+  slides?: Slide[]
+  lastCompletedSlides?: Slide[]
+  status?: ProjectStatus
+  workflow?: WorkflowState
+  generationRunId?: string | null
+  enabled?: boolean
+  onProjectIdChange?: (projectId: string) => void
+  onSaveReady?: (saveNow: () => Promise<void>) => void
+  onSaved?: () => void
+  autoSaveNow?: boolean
+}
+
+function AutoSaveProbe({
+  projectId,
+  fileContent = '# Autosave',
+  fileName = 'autosave.md',
+  slides = [],
+  lastCompletedSlides = [],
+  status = 'draft',
+  workflow = EMPTY_WORKFLOW_STATE,
+  generationRunId = null,
+  enabled = false,
+  onProjectIdChange,
+  onSaveReady,
+  onSaved,
+  autoSaveNow = true
+}: AutoSaveProbeProps) {
+  const { saveNow } = useAutoSave({
+    projectId,
+    fileContent,
+    fileName,
+    slides,
+    lastCompletedSlides,
+    generationConfig: TEST_GENERATION_CONFIG,
+    workflow,
+    status,
+    generationRunId,
+    onProjectIdChange,
+    enabled
+  })
+
+  useEffect(() => {
+    onSaveReady?.(saveNow)
+  }, [onSaveReady, saveNow])
+
+  useEffect(() => {
+    if (!autoSaveNow) {
+      return
+    }
+
+    void saveNow().then(onSaved)
+  }, [autoSaveNow, onSaved, saveNow])
+
+  return null
+}
+
+function throwOnProjectPut(message: string) {
+  const originalPut = IDBObjectStore.prototype.put
+
+  return vi.spyOn(IDBObjectStore.prototype, 'put').mockImplementation(function (
+    this: IDBObjectStore,
+    value: unknown,
+    key?: IDBValidKey
+  ) {
+    if (this.name === 'projects') {
+      throw new Error(message)
+    }
+
+    return key === undefined
+      ? originalPut.call(this, value)
+      : originalPut.call(this, value, key)
+  })
+}
+
+describe('AutoSave durable persistence', () => {
+  beforeEach(async () => {
+    await resetProjectStoreForTests()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('stores slide images in IndexedDB and hydrateProjectImages restores imageBase64', async () => {
+    const imageBase64 = 'YXV0b3NhdmUtaW1hZ2U='
+    const slide = buildSlide({
+      id: 'slide-image',
+      imageUrl: `data:image/png;base64,${imageBase64}`,
+      imageBase64
+    })
+    const onSaved = vi.fn()
+
+    render(
+      <AutoSaveProbe
+        projectId="autosave-images"
+        slides={[slide]}
+        lastCompletedSlides={[]}
+        onSaved={onSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled()
+    })
+
+    const compactProject = await getProject('autosave-images')
+    expect(compactProject?.slides[0].imageBase64).toBeUndefined()
+    expect(compactProject?.slides[0]).toMatchObject({
+      imageUrl: '',
+      imageStorageKey: 'autosave-images:slides:slide-image:current'
+    })
+    expect(await listStoredAssets('autosave-images')).toHaveLength(1)
+
+    const hydrated = await hydrateProjectImages(compactProject!)
+    expect(hydrated.slides[0].imageBase64).toBe(imageBase64)
+    expect(hydrated.slides[0].imageUrl).toBe(`data:image/png;base64,${imageBase64}`)
+  })
+
+  it('preserves lastCompletedSlides while generating even when current slides are empty', async () => {
+    const completedImage = 'Y29tcGxldGVkLWltYWdl'
+    const completedSlide = buildSlide({
+      id: 'completed-slide',
+      imageUrl: `data:image/png;base64,${completedImage}`,
+      imageBase64: completedImage
+    })
+    const onSaved = vi.fn()
+
+    render(
+      <AutoSaveProbe
+        projectId="autosave-generating"
+        slides={[]}
+        lastCompletedSlides={[completedSlide]}
+        status="generating"
+        generationRunId="run-1"
+        onSaved={onSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled()
+    })
+
+    const compactProject = await getProject('autosave-generating')
+    expect(compactProject).toMatchObject({
+      status: 'generating',
+      generationRunId: 'run-1',
+      slides: []
+    })
+    expect(compactProject?.lastCompletedSlides).toHaveLength(1)
+
+    const hydrated = await hydrateProjectImages(compactProject!)
+    expect(hydrated.lastCompletedSlides[0].imageBase64).toBe(completedImage)
+  })
+
+  it('preserves an existing project title and createdAt across autosaves', async () => {
+    await saveProjectRecord(buildProjectRecord({
+      id: 'existing-project',
+      title: 'Existing title',
+      createdAt: 123,
+      updatedAt: 456,
+      lastOpenedAt: 456,
+      fileName: 'original.md',
+      fileContent: '# Original'
+    }))
+    const onSaved = vi.fn()
+
+    render(
+      <AutoSaveProbe
+        projectId="existing-project"
+        fileName="renamed.md"
+        fileContent="# Updated"
+        slides={[]}
+        lastCompletedSlides={[]}
+        onSaved={onSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled()
+    })
+
+    const stored = await getProject('existing-project')
+    expect(stored).toMatchObject({
+      title: 'Existing title',
+      createdAt: 123,
+      fileName: 'renamed.md',
+      fileContent: '# Updated'
+    })
+    expect(stored?.updatedAt).toBeGreaterThan(456)
+  })
+
+  it('flushes pagehide and hidden visibilitychange saves without waiting for debounce', async () => {
+    const onProjectIdChange = vi.fn()
+
+    const { unmount } = render(
+      <AutoSaveProbe
+        projectId={null}
+        fileContent="# Lifecycle"
+        fileName="lifecycle.md"
+        slides={[]}
+        lastCompletedSlides={[]}
+        enabled
+        autoSaveNow={false}
+        onProjectIdChange={onProjectIdChange}
+      />
+    )
+
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+
+    await waitFor(() => {
+      expect(onProjectIdChange).toHaveBeenCalled()
+    }, { timeout: 500 })
+    const pagehideProjectId = onProjectIdChange.mock.calls[0][0]
+    expect(await getProject(pagehideProjectId)).toMatchObject({
+      fileName: 'lifecycle.md',
+      fileContent: '# Lifecycle'
+    })
+    unmount()
+
+    onProjectIdChange.mockClear()
+    render(
+      <AutoSaveProbe
+        projectId={null}
+        fileContent="# Hidden"
+        fileName="hidden.md"
+        slides={[]}
+        lastCompletedSlides={[]}
+        enabled
+        autoSaveNow={false}
+        onProjectIdChange={onProjectIdChange}
+      />
+    )
+
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden'
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    await waitFor(() => {
+      expect(onProjectIdChange).toHaveBeenCalled()
+    }, { timeout: 500 })
+    const hiddenProjectId = onProjectIdChange.mock.calls[0][0]
+    expect(await getProject(hiddenProjectId)).toMatchObject({
+      fileName: 'hidden.md',
+      fileContent: '# Hidden'
+    })
+  })
+
+  it('propagates explicit saveNow failures while background saves catch and log failures', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    let saveNow: (() => Promise<void>) | undefined
+
+    render(
+      <AutoSaveProbe
+        projectId="explicit-failure"
+        fileContent="# Explicit"
+        autoSaveNow={false}
+        onSaveReady={(save) => {
+          saveNow = save
+        }}
+      />
+    )
+
+    await waitFor(() => {
+      expect(saveNow).toBeDefined()
+    })
+    const putSpy = throwOnProjectPut('project put failed')
+
+    await expect(saveNow!()).rejects.toThrow('project put failed')
+
+    putSpy.mockRestore()
+    consoleError.mockClear()
+
+    throwOnProjectPut('background put failed')
+    render(
+      <AutoSaveProbe
+        projectId="background-failure"
+        fileContent="# Background"
+        enabled
+        autoSaveNow={false}
+      />
+    )
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+
+    await waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith(
+        'Failed to save project:',
+        expect.objectContaining({ message: 'background put failed' })
+      )
+    })
+  })
+
+  it('sets the active project id after autosave', async () => {
+    const onSaved = vi.fn()
+
+    render(
+      <AutoSaveProbe
+        projectId="active-autosave"
+        fileContent="# Active"
+        onSaved={onSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalled()
+    })
+
+    expect(await getActiveProjectId()).toBe('active-autosave')
+  })
+})

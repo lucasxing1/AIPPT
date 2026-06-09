@@ -41,6 +41,8 @@ interface UseAutoSaveReturn {
   saveNow: () => Promise<void>
 }
 
+type AutoSaveSnapshot = Required<UseAutoSaveParams>
+
 function isResetWorkflow(workflow: WorkflowState): boolean {
   return workflow.status === 'idle' &&
     workflow.outline === null &&
@@ -53,6 +55,15 @@ function isResetWorkflow(workflow: WorkflowState): boolean {
 function projectTitleFromFileName(fileName: string): string {
   const baseName = fileName.split(/[\\/]/).pop()?.replace(/\.[^/.]+$/, '').trim()
   return baseName || 'Untitled project'
+}
+
+function hasPersistableContent(snapshot: AutoSaveSnapshot): boolean {
+  return Boolean(
+    snapshot.fileContent ||
+    snapshot.slides.length > 0 ||
+    snapshot.lastCompletedSlides.length > 0 ||
+    !isResetWorkflow(snapshot.workflow)
+  )
 }
 
 /**
@@ -76,13 +87,51 @@ export function useAutoSave({
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isSavingRef = useRef(false)
   const lastSavedRef = useRef<Date | null>(null)
+  const lifecycleFlushInFlightRef = useRef(false)
+  const latestSnapshotRef = useRef<AutoSaveSnapshot>({
+    projectId,
+    fileContent,
+    fileName,
+    slides,
+    lastCompletedSlides,
+    generationConfig,
+    workflow,
+    status,
+    generationRunId,
+    onProjectIdChange: onProjectIdChange ?? (() => undefined),
+    enabled
+  })
+
+  latestSnapshotRef.current = {
+    projectId,
+    fileContent,
+    fileName,
+    slides,
+    lastCompletedSlides,
+    generationConfig,
+    workflow,
+    status,
+    generationRunId,
+    onProjectIdChange: onProjectIdChange ?? (() => undefined),
+    enabled
+  }
+
+  const clearPendingTimer = useCallback((): boolean => {
+    if (!timeoutRef.current) {
+      return false
+    }
+
+    clearTimeout(timeoutRef.current)
+    timeoutRef.current = null
+    return true
+  }, [])
 
   /**
    * 执行保存操作
    */
-  const performSave = useCallback(async () => {
+  const performSave = useCallback(async (snapshot = latestSnapshotRef.current) => {
     // 只有当有内容时才保存
-    if (!fileContent && slides.length === 0 && lastCompletedSlides.length === 0 && isResetWorkflow(workflow)) {
+    if (!hasPersistableContent(snapshot)) {
       return
     }
 
@@ -90,20 +139,20 @@ export function useAutoSave({
 
     try {
       const now = Date.now()
-      const id = projectId || createProjectId()
-      const existingProject = projectId ? await getProject(projectId) : null
+      const id = snapshot.projectId || createProjectId()
+      const existingProject = snapshot.projectId ? await getProject(snapshot.projectId) : null
       const project: ProjectRecord = {
         version: 2,
         id,
-        title: existingProject?.title || projectTitleFromFileName(fileName),
-        fileName,
-        fileContent,
-        slides,
-        generationConfig,
-        workflow,
-        status,
-        generationRunId,
-        lastCompletedSlides,
+        title: existingProject?.title || projectTitleFromFileName(snapshot.fileName),
+        fileName: snapshot.fileName,
+        fileContent: snapshot.fileContent,
+        slides: snapshot.slides,
+        generationConfig: snapshot.generationConfig,
+        workflow: snapshot.workflow,
+        status: snapshot.status,
+        generationRunId: snapshot.generationRunId,
+        lastCompletedSlides: snapshot.lastCompletedSlides,
         createdAt: existingProject?.createdAt || now,
         updatedAt: now,
         lastOpenedAt: now
@@ -111,30 +160,21 @@ export function useAutoSave({
 
       const savedProject = await saveProjectRecord(project)
       await setActiveProjectId(savedProject.id)
-      if (!projectId) {
-        onProjectIdChange?.(savedProject.id)
+      if (!snapshot.projectId) {
+        snapshot.onProjectIdChange(savedProject.id)
       }
       lastSavedRef.current = new Date()
     } finally {
       isSavingRef.current = false
     }
-  }, [
-    fileContent,
-    fileName,
-    generationConfig,
-    generationRunId,
-    lastCompletedSlides,
-    onProjectIdChange,
-    projectId,
-    slides,
-    status,
-    workflow
-  ])
+  }, [])
 
-  const saveBestEffort = useCallback(() => {
-    void performSave().catch((error) => {
+  const saveBestEffort = useCallback(async (snapshot = latestSnapshotRef.current) => {
+    try {
+      await performSave(snapshot)
+    } catch (error) {
       console.error('Failed to save project:', error)
-    })
+    }
   }, [performSave])
 
   /**
@@ -142,44 +182,49 @@ export function useAutoSave({
    */
   const saveNow = useCallback(async () => {
     // 清除待执行的防抖保存
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-      timeoutRef.current = null
-    }
-    await performSave()
-  }, [performSave])
+    clearPendingTimer()
+    await performSave(latestSnapshotRef.current)
+  }, [clearPendingTimer, performSave])
 
   /**
    * 防抖保存
    */
   const debouncedSave = useCallback(() => {
     // 清除之前的定时器
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-    }
+    clearPendingTimer()
 
     // 设置新的定时器
     timeoutRef.current = setTimeout(() => {
-      saveBestEffort()
+      const snapshot = latestSnapshotRef.current
       timeoutRef.current = null
+      void saveBestEffort(snapshot)
     }, DEBOUNCE_DELAY)
-  }, [saveBestEffort])
+  }, [clearPendingTimer, saveBestEffort])
 
   /**
    * 监听状态变化，触发防抖保存
    */
   useEffect(() => {
     if (!enabled) {
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-        timeoutRef.current = null
-      }
+      clearPendingTimer()
       return
     }
 
     // 触发防抖保存
     debouncedSave()
-  }, [fileContent, fileName, slides, lastCompletedSlides, generationConfig, workflow, status, generationRunId, enabled, debouncedSave])
+  }, [
+    clearPendingTimer,
+    debouncedSave,
+    enabled,
+    fileContent,
+    fileName,
+    generationConfig,
+    generationRunId,
+    lastCompletedSlides,
+    slides,
+    status,
+    workflow
+  ])
 
   /**
    * 组件卸载时保存
@@ -187,26 +232,32 @@ export function useAutoSave({
   useEffect(() => {
     return () => {
       // 组件卸载时，如果有待保存的内容，立即保存
-      if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current)
-        timeoutRef.current = null
-        saveBestEffort()
+      if (clearPendingTimer()) {
+        void saveBestEffort(latestSnapshotRef.current)
       }
     }
-  }, [saveBestEffort])
+  }, [clearPendingTimer, saveBestEffort])
 
   /**
    * 页面进入后台或被卸载时保存
    */
   useEffect(() => {
     const flushPendingSave = () => {
-      if (enabled && (fileContent || slides.length > 0 || lastCompletedSlides.length > 0 || !isResetWorkflow(workflow))) {
-        if (timeoutRef.current) {
-          clearTimeout(timeoutRef.current)
-          timeoutRef.current = null
-        }
-        saveBestEffort()
+      const snapshot = latestSnapshotRef.current
+      if (
+        !snapshot.enabled ||
+        !timeoutRef.current ||
+        lifecycleFlushInFlightRef.current ||
+        !hasPersistableContent(snapshot)
+      ) {
+        return
       }
+
+      clearPendingTimer()
+      lifecycleFlushInFlightRef.current = true
+      void saveBestEffort(snapshot).finally(() => {
+        lifecycleFlushInFlightRef.current = false
+      })
     }
 
     const handleVisibilityChange = () => {
@@ -222,7 +273,7 @@ export function useAutoSave({
       window.removeEventListener('pagehide', flushPendingSave)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [enabled, fileContent, slides.length, lastCompletedSlides.length, workflow, saveBestEffort])
+  }, [clearPendingTimer, saveBestEffort])
 
   return {
     isSaving: isSavingRef.current,

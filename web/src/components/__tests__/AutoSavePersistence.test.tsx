@@ -98,11 +98,18 @@ function throwOnProjectPut(message: string) {
 }
 
 describe('AutoSave durable persistence', () => {
+  let originalVisibilityState: DocumentVisibilityState
+
   beforeEach(async () => {
+    originalVisibilityState = document.visibilityState
     await resetProjectStoreForTests()
   })
 
   afterEach(() => {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: originalVisibilityState
+    })
     vi.useRealTimers()
     vi.restoreAllMocks()
   })
@@ -271,6 +278,74 @@ describe('AutoSave durable persistence', () => {
       fileName: 'hidden.md',
       fileContent: '# Hidden'
     })
+  })
+
+  it('does not immediately save the previous snapshot when autosave inputs change with a pending debounce', async () => {
+    const { rerender } = render(
+      <AutoSaveProbe
+        projectId="debounced-project"
+        fileContent="# First"
+        fileName="first.md"
+        slides={[]}
+        lastCompletedSlides={[]}
+        enabled
+        autoSaveNow={false}
+      />
+    )
+
+    rerender(
+      <AutoSaveProbe
+        projectId="debounced-project"
+        fileContent="# Latest"
+        fileName="latest.md"
+        slides={[]}
+        lastCompletedSlides={[]}
+        enabled
+        autoSaveNow={false}
+      />
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(await getProject('debounced-project')).toBeNull()
+
+    await waitFor(async () => {
+      expect(await getProject('debounced-project')).toMatchObject({
+        fileContent: '# Latest',
+        fileName: 'latest.md'
+      })
+    }, { timeout: 1500 })
+  })
+
+  it('coalesces repeated lifecycle flush events for a new pending project', async () => {
+    const onProjectIdChange = vi.fn()
+
+    render(
+      <AutoSaveProbe
+        projectId={null}
+        fileContent="# Coalesce"
+        fileName="coalesce.md"
+        slides={[]}
+        lastCompletedSlides={[]}
+        enabled
+        autoSaveNow={false}
+        onProjectIdChange={onProjectIdChange}
+      />
+    )
+
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      value: 'hidden'
+    })
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    await waitFor(() => {
+      expect(onProjectIdChange).toHaveBeenCalledTimes(1)
+    }, { timeout: 500 })
+
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(onProjectIdChange).toHaveBeenCalledTimes(1)
   })
 
   it('propagates explicit saveNow failures while background saves catch and log failures', async () => {

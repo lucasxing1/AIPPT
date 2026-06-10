@@ -9,8 +9,8 @@ import DesignWorkflowPanel from './components/DesignWorkflowPanel'
 import GenerateButton from './components/GenerateButton'
 import ProgressIndicator from './components/ProgressIndicator'
 import ConfirmDialog from './components/ConfirmDialog'
-import NewProjectButton from './components/NewProjectButton'
 import RestoreSessionDialog from './components/RestoreSessionDialog'
+import ProjectLibrary from './components/ProjectLibrary'
 import { AppStateProvider } from './contexts/AppStateContext'
 import { useAppState } from './contexts/useAppState'
 import { UiPreferencesProvider } from './contexts/UiPreferencesContext'
@@ -21,10 +21,22 @@ import { useEditConflict } from './hooks/useEditConflict'
 import { useExport } from './hooks/useExport'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useStateRestore } from './hooks/useStateRestore'
+import { useProjectManager } from './hooks/useProjectManager'
 import { StorageService } from './services/storageService'
 import { uploadDocument } from './services/uploadService'
 import { saveFullApiConfig } from './utils/apiConfig'
-import { ConfirmedSlidePrompt, GenerationConfig, ExportFormat, FullApiConfig } from './types'
+import { ConfirmedSlidePrompt, GenerationConfig, ExportFormat, FullApiConfig, WorkflowState } from './types'
+
+function createEmptyWorkflowState(): WorkflowState {
+  return {
+    status: 'idle',
+    outline: null,
+    slidePrompts: [],
+    expandedOutlinePages: [],
+    expandedDesignPages: [],
+    error: null
+  }
+}
 
 /**
  * 主应用内容组件
@@ -66,6 +78,17 @@ function AppContent() {
     startExport
   } = useExport(slides, state.generationConfig.aspectRatio)
   const [exportError, setExportError] = useState<string | null>(null)
+  const {
+    projects,
+    activeProjectId,
+    isLoadingProjects,
+    refreshProjects,
+    openProject,
+    createProject,
+    renameProject,
+    duplicateProject,
+    deleteProject
+  } = useProjectManager()
 
   // 状态恢复
   const {
@@ -100,6 +123,10 @@ function AppContent() {
     enabled: !isRestoring && !showRestoreDialog
   })
 
+  useEffect(() => {
+    void refreshProjects()
+  }, [refreshProjects, state.projectId, state.fileName, slides.length, state.status])
+
   // 处理恢复会话
   const handleRestoreSession = useCallback(() => {
     if (restoredProject) {
@@ -130,11 +157,54 @@ function AppContent() {
     dismissRestore()
   }, [dismissRestore])
 
-  // 处理新建项目
-  const handleNewProject = useCallback(() => {
-    resetState()
-    setConfirmedSlidePrompts(null)
-  }, [resetState])
+  const restoreProjectRecord = useCallback((project: Awaited<ReturnType<typeof openProject>>) => {
+    if (!project) return
+
+    restoreState({
+      projectId: project.id,
+      fileContent: project.fileContent,
+      fileName: project.fileName,
+      slides: project.slides,
+      generationConfig: project.generationConfig,
+      workflow: project.workflow,
+      status: project.status,
+      lastCompletedSlides: project.lastCompletedSlides
+    })
+    setConfirmedSlidePrompts(
+      project.workflow.status === 'prompts_ready' && project.workflow.slidePrompts.length > 0
+        ? project.workflow.slidePrompts
+        : null
+    )
+  }, [restoreState])
+
+  const handleOpenProject = useCallback(async (id: string) => {
+    const project = await openProject(id)
+    restoreProjectRecord(project)
+  }, [openProject, restoreProjectRecord])
+
+  const handleCreateProject = useCallback(async () => {
+    const project = await createProject({
+      generationConfig: state.generationConfig,
+      workflow: createEmptyWorkflowState()
+    })
+    restoreProjectRecord(project)
+  }, [createProject, restoreProjectRecord, state.generationConfig])
+
+  const handleRenameProject = useCallback(async (id: string, title: string) => {
+    await renameProject(id, title)
+  }, [renameProject])
+
+  const handleDuplicateProject = useCallback(async (id: string) => {
+    await duplicateProject(id)
+  }, [duplicateProject])
+
+  const handleDeleteProject = useCallback(async (id: string) => {
+    await deleteProject(id)
+    if (id === state.projectId) {
+      resetState()
+      setConfirmedSlidePrompts(null)
+    }
+  }, [deleteProject, resetState, state.projectId])
 
   const handleFileSelect = useCallback(async (file: File) => {
     const uploadResult = await uploadDocument(file)
@@ -238,7 +308,18 @@ function AppContent() {
           fileName={state.fileName || null}
           fileContent={state.fileContent}
           onFileSelect={handleFileSelect}
-        />
+        >
+          <ProjectLibrary
+            projects={projects}
+            activeProjectId={state.projectId || activeProjectId}
+            isLoading={isLoadingProjects}
+            onOpenProject={handleOpenProject}
+            onNewProject={handleCreateProject}
+            onRenameProject={handleRenameProject}
+            onDuplicateProject={handleDuplicateProject}
+            onDeleteProject={handleDeleteProject}
+          />
+        </LeftPanel>
       }
       centerPanel={
         <CenterPanel
@@ -250,14 +331,6 @@ function AppContent() {
           onEditCancel={handleEditCancel}
           onRevertToVersion={revertToVersion}
         >
-          {/* 新建项目按钮 */}
-          <div className="flex justify-end mb-4">
-            <NewProjectButton
-              hasUnsavedChanges={state.fileContent !== '' || slides.length > 0}
-              onNewProject={handleNewProject}
-            />
-          </div>
-
           {/* API 配置表单 */}
           <ApiConfigForm
             initialConfig={state.fullApiConfig}

@@ -1,0 +1,124 @@
+import { useCallback, useEffect, useState } from 'react'
+import {
+  createProjectId,
+  deleteProject as deleteStoredProject,
+  duplicateProject as duplicateStoredProject,
+  getActiveProjectId,
+  getProject,
+  getProjectSummaries,
+  hydrateProjectImages,
+  renameProject as renameStoredProject,
+  saveProjectRecord,
+  setActiveProjectId
+} from '../services/projectStore'
+import type { GenerationConfig, ProjectRecord, ProjectSummary, WorkflowState } from '../types'
+
+interface CreateProjectInput {
+  title?: string
+  fileName?: string
+  fileContent?: string
+  generationConfig: GenerationConfig
+  workflow: WorkflowState
+}
+
+function titleFromFileName(fileName: string): string {
+  const baseName = fileName.split(/[\\/]/).pop()?.replace(/\.[^/.]+$/, '').trim()
+  return baseName || 'Untitled project'
+}
+
+export function useProjectManager() {
+  const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [activeProjectId, setActiveProjectIdState] = useState<string | null>(null)
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true)
+
+  const refreshProjects = useCallback(async () => {
+    setIsLoadingProjects(true)
+    try {
+      const [summaries, activeId] = await Promise.all([
+        getProjectSummaries(),
+        getActiveProjectId()
+      ])
+      setProjects(summaries)
+      setActiveProjectIdState(activeId)
+    } finally {
+      setIsLoadingProjects(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void refreshProjects()
+  }, [refreshProjects])
+
+  const openProject = useCallback(async (id: string): Promise<ProjectRecord | null> => {
+    const project = await getProject(id)
+    if (!project) {
+      await refreshProjects()
+      return null
+    }
+
+    const hydratedProject = await hydrateProjectImages(project)
+    const openedProject: ProjectRecord = {
+      ...hydratedProject,
+      lastOpenedAt: Date.now()
+    }
+
+    await saveProjectRecord(openedProject)
+    await setActiveProjectId(id)
+    await refreshProjects()
+    return openedProject
+  }, [refreshProjects])
+
+  const createProject = useCallback(async (input: CreateProjectInput): Promise<ProjectRecord> => {
+    const now = Date.now()
+    const fileName = input.fileName ?? ''
+    const project: ProjectRecord = {
+      version: 2,
+      id: createProjectId(),
+      title: input.title?.trim() || titleFromFileName(fileName),
+      fileName,
+      fileContent: input.fileContent ?? '',
+      slides: [],
+      generationConfig: input.generationConfig,
+      workflow: input.workflow,
+      status: 'draft',
+      generationRunId: null,
+      lastCompletedSlides: [],
+      createdAt: now,
+      updatedAt: now,
+      lastOpenedAt: now
+    }
+
+    const savedProject = await saveProjectRecord(project)
+    await setActiveProjectId(savedProject.id)
+    await refreshProjects()
+    return savedProject
+  }, [refreshProjects])
+
+  const renameProject = useCallback(async (id: string, title: string) => {
+    await renameStoredProject(id, title)
+    await refreshProjects()
+  }, [refreshProjects])
+
+  const duplicateProject = useCallback(async (id: string) => {
+    const duplicatedProject = await duplicateStoredProject(id)
+    await refreshProjects()
+    return duplicatedProject
+  }, [refreshProjects])
+
+  const deleteProject = useCallback(async (id: string) => {
+    await deleteStoredProject(id)
+    await refreshProjects()
+  }, [refreshProjects])
+
+  return {
+    projects,
+    activeProjectId,
+    isLoadingProjects,
+    refreshProjects,
+    openProject,
+    createProject,
+    renameProject,
+    duplicateProject,
+    deleteProject
+  }
+}

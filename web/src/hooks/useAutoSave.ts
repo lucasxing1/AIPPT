@@ -29,6 +29,7 @@ interface UseAutoSaveParams {
   status: ProjectStatus
   generationRunId: string | null
   onProjectIdChange?: (projectId: string) => void
+  onSaved?: (projectId: string) => void
   enabled?: boolean
 }
 
@@ -82,6 +83,7 @@ export function useAutoSave({
   status,
   generationRunId,
   onProjectIdChange,
+  onSaved,
   enabled = true
 }: UseAutoSaveParams): UseAutoSaveReturn {
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -99,6 +101,7 @@ export function useAutoSave({
     status,
     generationRunId,
     onProjectIdChange: onProjectIdChange ?? (() => undefined),
+    onSaved: onSaved ?? (() => undefined),
     enabled
   })
 
@@ -113,6 +116,7 @@ export function useAutoSave({
     status,
     generationRunId,
     onProjectIdChange: onProjectIdChange ?? (() => undefined),
+    onSaved: onSaved ?? (() => undefined),
     enabled
   }
 
@@ -163,6 +167,7 @@ export function useAutoSave({
       if (!snapshot.projectId) {
         snapshot.onProjectIdChange(savedProject.id)
       }
+      snapshot.onSaved(savedProject.id)
       lastSavedRef.current = new Date()
     } finally {
       isSavingRef.current = false

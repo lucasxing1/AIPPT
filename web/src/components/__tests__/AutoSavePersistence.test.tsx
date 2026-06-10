@@ -30,6 +30,7 @@ interface AutoSaveProbeProps {
   generationRunId?: string | null
   enabled?: boolean
   onProjectIdChange?: (projectId: string) => void
+  onProjectSaved?: (projectId: string) => void
   onSaveReady?: (saveNow: () => Promise<void>) => void
   onSaved?: () => void
   autoSaveNow?: boolean
@@ -46,6 +47,7 @@ function AutoSaveProbe({
   generationRunId = null,
   enabled = false,
   onProjectIdChange,
+  onProjectSaved,
   onSaveReady,
   onSaved,
   autoSaveNow = true
@@ -61,6 +63,7 @@ function AutoSaveProbe({
     status,
     generationRunId,
     onProjectIdChange,
+    onSaved: onProjectSaved,
     enabled
   })
 
@@ -147,6 +150,34 @@ describe('AutoSave durable persistence', () => {
     const hydrated = await hydrateProjectImages(compactProject!)
     expect(hydrated.slides[0].imageBase64).toBe(imageBase64)
     expect(hydrated.slides[0].imageUrl).toBe(`data:image/png;base64,${imageBase64}`)
+  })
+
+  it('notifies after a durable save completes with the saved project id', async () => {
+    const onProjectSaved = vi.fn()
+    const onProjectIdChange = vi.fn()
+
+    render(
+      <AutoSaveProbe
+        projectId={null}
+        fileContent="# Saved callback"
+        fileName="saved-callback.md"
+        slides={[]}
+        lastCompletedSlides={[]}
+        onProjectIdChange={onProjectIdChange}
+        onProjectSaved={onProjectSaved}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onProjectSaved).toHaveBeenCalledTimes(1)
+    })
+    const savedProjectId = onProjectSaved.mock.calls[0][0]
+    expect(onProjectIdChange).toHaveBeenCalledWith(savedProjectId)
+    expect(await getProject(savedProjectId)).toMatchObject({
+      id: savedProjectId,
+      fileName: 'saved-callback.md',
+      fileContent: '# Saved callback'
+    })
   })
 
   it('preserves lastCompletedSlides while generating even when current slides are empty', async () => {

@@ -38,6 +38,15 @@ function createEmptyWorkflowState(): WorkflowState {
   }
 }
 
+function isResetWorkflow(workflow: WorkflowState): boolean {
+  return workflow.status === 'idle' &&
+    workflow.outline === null &&
+    workflow.slidePrompts.length === 0 &&
+    workflow.expandedOutlinePages.length === 0 &&
+    workflow.expandedDesignPages.length === 0 &&
+    workflow.error === null
+}
+
 /**
  * 主应用内容组件
  * 使用 Context 中的状态
@@ -56,7 +65,7 @@ function AppContent() {
     setProjectId
   } = useAppState()
   
-  const { generate, isGenerating, progress, error, slides } = useGeneration()
+  const { generate, cancel: cancelGeneration, isGenerating, progress, error, slides } = useGeneration()
   const {
     editSession,
     isEditing,
@@ -108,8 +117,14 @@ function AppContent() {
     }
   }, [isRestoring, hasRestoredData, restoredProject])
 
+  const handleProjectSaved = useCallback(() => {
+    void Promise.resolve(refreshProjects()).catch((err) => {
+      console.error('Failed to refresh project summaries after save:', err)
+    })
+  }, [refreshProjects])
+
   // 自动保存
-  useAutoSave({
+  const { saveNow } = useAutoSave({
     projectId: state.projectId,
     fileContent: state.fileContent,
     fileName: state.fileName,
@@ -120,12 +135,9 @@ function AppContent() {
     status: state.status,
     generationRunId: state.generationRunId,
     onProjectIdChange: setProjectId,
+    onSaved: handleProjectSaved,
     enabled: !isRestoring && !showRestoreDialog
   })
-
-  useEffect(() => {
-    void refreshProjects()
-  }, [refreshProjects, state.projectId, state.fileName, slides.length, state.status])
 
   // 处理恢复会话
   const handleRestoreSession = useCallback(() => {
@@ -177,18 +189,47 @@ function AppContent() {
     )
   }, [restoreState])
 
+  const hasCurrentProjectContent = useCallback(() => Boolean(
+    state.fileContent ||
+    slides.length > 0 ||
+    state.lastCompletedSlides.length > 0 ||
+    !isResetWorkflow(state.workflow)
+  ), [slides.length, state.fileContent, state.lastCompletedSlides.length, state.workflow])
+
+  const prepareProjectLifecycleChange = useCallback(async () => {
+    if (hasCurrentProjectContent()) {
+      try {
+        await saveNow()
+      } catch (err) {
+        console.error('Failed to save current project before switching:', err)
+        return false
+      }
+    }
+
+    cancelGeneration()
+    return true
+  }, [cancelGeneration, hasCurrentProjectContent, saveNow])
+
   const handleOpenProject = useCallback(async (id: string) => {
+    if (!await prepareProjectLifecycleChange()) {
+      return
+    }
+
     const project = await openProject(id)
     restoreProjectRecord(project)
-  }, [openProject, restoreProjectRecord])
+  }, [openProject, prepareProjectLifecycleChange, restoreProjectRecord])
 
   const handleCreateProject = useCallback(async () => {
+    if (!await prepareProjectLifecycleChange()) {
+      return
+    }
+
     const project = await createProject({
       generationConfig: state.generationConfig,
       workflow: createEmptyWorkflowState()
     })
     restoreProjectRecord(project)
-  }, [createProject, restoreProjectRecord, state.generationConfig])
+  }, [createProject, prepareProjectLifecycleChange, restoreProjectRecord, state.generationConfig])
 
   const handleRenameProject = useCallback(async (id: string, title: string) => {
     await renameProject(id, title)
@@ -199,12 +240,16 @@ function AppContent() {
   }, [duplicateProject])
 
   const handleDeleteProject = useCallback(async (id: string) => {
+    if (id === state.projectId && !await prepareProjectLifecycleChange()) {
+      return
+    }
+
     await deleteProject(id)
     if (id === state.projectId) {
       resetState()
       setConfirmedSlidePrompts(null)
     }
-  }, [deleteProject, resetState, state.projectId])
+  }, [deleteProject, prepareProjectLifecycleChange, resetState, state.projectId])
 
   const handleFileSelect = useCallback(async (file: File) => {
     const uploadResult = await uploadDocument(file)

@@ -236,4 +236,17 @@ describe('App project lifecycle safeguards', () => {
 
     expect(mocks.refreshProjects).toHaveBeenCalled()
   })
+
+  it('renames a project exactly once from the project library action', async () => {
+    vi.spyOn(window, 'prompt').mockReturnValue('Renamed Deck')
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '重命名 Saved Deck' }))
+
+    await waitFor(() => {
+      expect(mocks.renameProject).toHaveBeenCalledWith('saved-project', 'Renamed Deck')
+    })
+    expect(mocks.renameProject).toHaveBeenCalledTimes(1)
+  })
 })

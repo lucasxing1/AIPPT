@@ -59,6 +59,23 @@ const mocks = vi.hoisted(() => {
     updatedAt: 1712131200000,
     lastOpenedAt: 1712131200000
   }
+  const duplicateProjectRecord: ProjectRecord = {
+    ...projectRecord,
+    id: 'duplicate-project',
+    title: 'Current Deck copy',
+    fileName: 'current-copy.md',
+    fileContent: '# Duplicate',
+    slides: [{
+      ...slide,
+      id: 'duplicate-slide',
+      pageNumber: 1,
+      prompt: 'duplicate prompt'
+    }],
+    lastCompletedSlides: [],
+    createdAt: 1712131300000,
+    updatedAt: 1712131300000,
+    lastOpenedAt: 1712131300000
+  }
 
   return {
     operations,
@@ -79,7 +96,10 @@ const mocks = vi.hoisted(() => {
     }),
     refreshProjects: vi.fn(),
     renameProject: vi.fn(),
-    duplicateProject: vi.fn(),
+    duplicateProject: vi.fn(async () => {
+      operations.push('duplicate')
+      return duplicateProjectRecord
+    }),
     deleteProject: vi.fn(async () => {
       operations.push('delete')
     }),
@@ -110,7 +130,14 @@ vi.mock('../CenterPanel', () => ({
 vi.mock('../RightPanel', () => ({ default: () => null }))
 vi.mock('../ApiConfigForm', () => ({ default: () => null }))
 vi.mock('../GenerationConfigForm', () => ({ default: () => null }))
-vi.mock('../DesignWorkflowPanel', () => ({ default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div> }))
+vi.mock('../DesignWorkflowPanel', () => ({
+  default: ({ children, fileContent }: { children?: React.ReactNode; fileContent: string }) => (
+    <div>
+      <div data-testid="workflow-file-content">{fileContent}</div>
+      {children}
+    </div>
+  )
+}))
 vi.mock('../GenerateButton', () => ({ default: () => null }))
 vi.mock('../ProgressIndicator', () => ({ default: () => null }))
 vi.mock('../ConfirmDialog', () => ({ default: () => null }))
@@ -240,6 +267,23 @@ describe('App project lifecycle safeguards', () => {
     expect(mocks.operations.indexOf('cancel')).toBeGreaterThanOrEqual(0)
     expect(mocks.operations.indexOf('save')).toBeLessThan(mocks.operations.indexOf('delete'))
     expect(mocks.operations.indexOf('cancel')).toBeLessThan(mocks.operations.indexOf('delete'))
+  })
+
+  it('flushes current autosave, cancels generation, and restores the duplicate project', async () => {
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '复制 Current Deck' }))
+
+    await waitFor(() => {
+      expect(mocks.duplicateProject).toHaveBeenCalledWith('current-project')
+    })
+    expect(mocks.operations.indexOf('save')).toBeGreaterThanOrEqual(0)
+    expect(mocks.operations.indexOf('cancel')).toBeGreaterThanOrEqual(0)
+    expect(mocks.operations.indexOf('save')).toBeLessThan(mocks.operations.indexOf('duplicate'))
+    expect(mocks.operations.indexOf('cancel')).toBeLessThan(mocks.operations.indexOf('duplicate'))
+    await waitFor(() => {
+      expect(screen.getByTestId('workflow-file-content')).toHaveTextContent('# Duplicate')
+    })
   })
 
   it('does not switch projects when the current autosave flush fails', async () => {

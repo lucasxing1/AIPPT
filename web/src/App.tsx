@@ -238,8 +238,13 @@ function AppContent() {
   }, [renameProject])
 
   const handleDuplicateProject = useCallback(async (id: string) => {
-    await duplicateProject(id)
-  }, [duplicateProject])
+    if (!await prepareProjectLifecycleChange()) {
+      return
+    }
+
+    const project = await duplicateProject(id)
+    restoreProjectRecord(project)
+  }, [duplicateProject, prepareProjectLifecycleChange, restoreProjectRecord])
 
   const handleDeleteProject = useCallback(async (id: string) => {
     if (id === currentProjectId && !await prepareProjectLifecycleChange()) {
@@ -391,6 +396,7 @@ function AppContent() {
           />
 
           <DesignWorkflowPanel
+            key={currentProjectId || 'draft-project'}
             fileContent={state.fileContent}
             fullApiConfig={state.fullApiConfig}
             generationConfig={state.generationConfig}

@@ -160,6 +160,24 @@ function statusFromWorkflow(currentStatus: ProjectStatus, workflow: WorkflowStat
   return currentStatus
 }
 
+function normalizeRestoredStatus(
+  status: ProjectStatus | undefined,
+  workflow: WorkflowState,
+  slides: Slide[]
+): ProjectStatus {
+  const restoredStatus = status ?? (slides.length > 0 ? 'generated' : 'draft')
+
+  if (restoredStatus !== 'generating') {
+    return restoredStatus
+  }
+
+  if (slides.length > 0) {
+    return 'generated'
+  }
+
+  return statusFromWorkflow('draft', workflow)
+}
+
 /**
  * Action 类型
  */
@@ -353,7 +371,7 @@ function appReducer(state: AppState, action: AppAction): AppState {
     case 'RESTORE_STATE': {
       const slides = dedupeSlides(action.payload.slides)
       const lastCompletedSlides = dedupeSlides(action.payload.lastCompletedSlides ?? action.payload.slides)
-      const status = action.payload.status ?? (slides.length > 0 ? 'generated' : 'draft')
+      const status = normalizeRestoredStatus(action.payload.status, action.payload.workflow, slides)
 
       return {
         ...state,

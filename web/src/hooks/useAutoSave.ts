@@ -90,6 +90,7 @@ export function useAutoSave({
   const isSavingRef = useRef(false)
   const lastSavedRef = useRef<Date | null>(null)
   const lifecycleFlushInFlightRef = useRef(false)
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
   const latestSnapshotRef = useRef<AutoSaveSnapshot>({
     projectId,
     fileContent,
@@ -174,13 +175,19 @@ export function useAutoSave({
     }
   }, [])
 
+  const enqueueSave = useCallback((snapshot = latestSnapshotRef.current) => {
+    const saveTask = saveQueueRef.current.then(() => performSave(snapshot))
+    saveQueueRef.current = saveTask.catch(() => undefined)
+    return saveTask
+  }, [performSave])
+
   const saveBestEffort = useCallback(async (snapshot = latestSnapshotRef.current) => {
     try {
-      await performSave(snapshot)
+      await enqueueSave(snapshot)
     } catch (error) {
       console.error('Failed to save project:', error)
     }
-  }, [performSave])
+  }, [enqueueSave])
 
   /**
    * 立即保存（跳过防抖）
@@ -188,8 +195,8 @@ export function useAutoSave({
   const saveNow = useCallback(async () => {
     // 清除待执行的防抖保存
     clearPendingTimer()
-    await performSave(latestSnapshotRef.current)
-  }, [clearPendingTimer, performSave])
+    await enqueueSave(latestSnapshotRef.current)
+  }, [clearPendingTimer, enqueueSave])
 
   /**
    * 防抖保存

@@ -217,6 +217,52 @@ describe('AppState persistence reducer behavior', () => {
     expect(result.lastCompletedSlides).toEqual(completedSlides)
   })
 
+  it('normalizes transient generating status when restoring a persisted project', () => {
+    const generatedSlides = [
+      slide({ id: 'generated-slide', pageNumber: 1, prompt: 'Generated slide' })
+    ]
+    const restoredWorkflow = workflow({
+      status: 'prompts_ready',
+      outline: buildDeckOutline(),
+      slidePrompts: [buildSlidePrompt()]
+    })
+
+    const result = appReducerForTests(
+      staleState({
+        isGenerating: true,
+        generationRunId: 'stale-run',
+        generationProgress: {
+          current: 0,
+          total: 1,
+          status: 'generating',
+          message: 'stale generation'
+        }
+      }),
+      {
+        type: 'RESTORE_STATE',
+        payload: {
+          projectId: 'project-generating',
+          fileContent: '# restored',
+          fileName: 'restored.md',
+          slides: generatedSlides,
+          generationConfig: TEST_GENERATION_CONFIG,
+          workflow: restoredWorkflow,
+          status: 'generating',
+          lastCompletedSlides: generatedSlides
+        }
+      }
+    )
+
+    expect(result.status).toBe('generated')
+    expect(result.isGenerating).toBe(false)
+    expect(result.generationRunId).toBeNull()
+    expect(result.generationProgress).toMatchObject({
+      current: 1,
+      total: 1,
+      status: 'completed'
+    })
+  })
+
   it('clears project state on reset while preserving API configs', () => {
     const state = staleState({
       apiConfig: { apiKey: 'image-key', baseUrl: 'https://image.example.test' },

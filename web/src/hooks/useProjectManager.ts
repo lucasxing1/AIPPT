@@ -101,6 +101,7 @@ export function useProjectManager() {
 
   const duplicateProject = useCallback(async (id: string) => {
     const duplicatedProject = await duplicateStoredProject(id)
+    await setActiveProjectId(duplicatedProject.id)
     await refreshProjects()
     return duplicatedProject
   }, [refreshProjects])

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import * as fc from 'fast-check'
 import 'fake-indexeddb/auto'
 import type { ProjectRecord, ProjectStatus, ProjectSummary, Slide } from '../../types'
@@ -24,6 +25,7 @@ import {
   readStoredProject,
   resetProjectStoreForTests
 } from '../../services/projectStore.test-utils'
+import { useProjectManager } from '../../hooks/useProjectManager'
 
 const CURRENT_IMAGE = 'Y3VycmVudA=='
 const COMPLETED_IMAGE = 'Y29tcGxldGVk'
@@ -195,6 +197,34 @@ describe('IndexedDB project store', () => {
     expect(await listStoredAssets('source-project')).toEqual([])
     expect((await getProject('other-project'))?.title).toBe('Other')
     expect(await getProject(duplicate.id)).not.toBeNull()
+  })
+
+  it('marks a duplicated project as active through the project manager', async () => {
+    await saveProjectRecord(buildProjectRecord({
+      id: 'manager-source',
+      title: 'Manager source',
+      slides: [imageSlide({ id: 'manager-slide', imageBase64: CURRENT_IMAGE })],
+      lastCompletedSlides: []
+    }))
+    await setActiveProjectId('manager-source')
+
+    const { result } = renderHook(() => useProjectManager())
+    await waitFor(() => {
+      expect(result.current.isLoadingProjects).toBe(false)
+    })
+
+    let duplicateId = ''
+    await act(async () => {
+      const duplicate = await result.current.duplicateProject('manager-source')
+      duplicateId = duplicate.id
+    })
+
+    expect(duplicateId).toBeTruthy()
+    expect(duplicateId).not.toBe('manager-source')
+    expect(await getActiveProjectId()).toBe(duplicateId)
+    await waitFor(() => {
+      expect(result.current.activeProjectId).toBe(duplicateId)
+    })
   })
 
   it('reports missing image assets instead of silently claiming full recovery', async () => {

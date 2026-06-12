@@ -22,6 +22,16 @@ const mocks = vi.hoisted(() => {
     updatedAt: 1712131200000,
     lastOpenedAt: 1712131200000
   }
+  const currentProjectSummary: ProjectSummary = {
+    id: 'current-project',
+    title: 'Current Deck',
+    fileName: 'current.md',
+    slideCount: 1,
+    status: 'generated',
+    createdAt: 1712131200000,
+    updatedAt: 1712131200000,
+    lastOpenedAt: 1712131200000
+  }
   const projectRecord: ProjectRecord = {
     version: 2,
     id: 'saved-project',
@@ -70,9 +80,12 @@ const mocks = vi.hoisted(() => {
     refreshProjects: vi.fn(),
     renameProject: vi.fn(),
     duplicateProject: vi.fn(),
-    deleteProject: vi.fn(),
+    deleteProject: vi.fn(async () => {
+      operations.push('delete')
+    }),
     slide,
-    projectSummary
+    projectSummary,
+    currentProjectSummary
   }
 })
 
@@ -165,7 +178,7 @@ vi.mock('../../hooks/useAutoSave', () => ({
 
 vi.mock('../../hooks/useProjectManager', () => ({
   useProjectManager: () => ({
-    projects: [mocks.projectSummary],
+    projects: [mocks.currentProjectSummary, mocks.projectSummary],
     activeProjectId: 'current-project',
     isLoadingProjects: false,
     refreshProjects: mocks.refreshProjects,
@@ -213,6 +226,22 @@ describe('App project lifecycle safeguards', () => {
     expect(mocks.operations.indexOf('cancel')).toBeLessThan(mocks.operations.indexOf('create'))
   })
 
+  it('flushes current autosave and cancels generation before deleting the current project', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '删除 Current Deck' }))
+
+    await waitFor(() => {
+      expect(mocks.deleteProject).toHaveBeenCalledWith('current-project')
+    })
+    expect(mocks.operations.indexOf('save')).toBeGreaterThanOrEqual(0)
+    expect(mocks.operations.indexOf('cancel')).toBeGreaterThanOrEqual(0)
+    expect(mocks.operations.indexOf('save')).toBeLessThan(mocks.operations.indexOf('delete'))
+    expect(mocks.operations.indexOf('cancel')).toBeLessThan(mocks.operations.indexOf('delete'))
+  })
+
   it('does not switch projects when the current autosave flush fails', async () => {
     const error = new Error('save failed')
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
@@ -225,6 +254,37 @@ describe('App project lifecycle safeguards', () => {
       expect(consoleError).toHaveBeenCalledWith('Failed to save current project before switching:', error)
     })
     expect(mocks.openProject).not.toHaveBeenCalled()
+    expect(mocks.cancelGeneration).not.toHaveBeenCalled()
+  })
+
+  it('does not create a new project when the current autosave flush fails', async () => {
+    const error = new Error('save failed')
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    mocks.saveNow.mockRejectedValueOnce(error)
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '新建项目' }))
+
+    await waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith('Failed to save current project before switching:', error)
+    })
+    expect(mocks.createProject).not.toHaveBeenCalled()
+    expect(mocks.cancelGeneration).not.toHaveBeenCalled()
+  })
+
+  it('does not delete the current project when the current autosave flush fails', async () => {
+    const error = new Error('save failed')
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    mocks.saveNow.mockRejectedValueOnce(error)
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '删除 Current Deck' }))
+
+    await waitFor(() => {
+      expect(consoleError).toHaveBeenCalledWith('Failed to save current project before switching:', error)
+    })
+    expect(mocks.deleteProject).not.toHaveBeenCalled()
     expect(mocks.cancelGeneration).not.toHaveBeenCalled()
   })
 

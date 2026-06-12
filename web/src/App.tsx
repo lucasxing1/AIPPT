@@ -123,6 +123,8 @@ function AppContent() {
     })
   }, [refreshProjects])
 
+  const currentProjectId = state.projectId || activeProjectId
+
   // 自动保存
   const { saveNow } = useAutoSave({
     projectId: state.projectId,
@@ -240,16 +242,16 @@ function AppContent() {
   }, [duplicateProject])
 
   const handleDeleteProject = useCallback(async (id: string) => {
-    if (id === state.projectId && !await prepareProjectLifecycleChange()) {
+    if (id === currentProjectId && !await prepareProjectLifecycleChange()) {
       return
     }
 
     await deleteProject(id)
-    if (id === state.projectId) {
+    if (id === currentProjectId) {
       resetState()
       setConfirmedSlidePrompts(null)
     }
-  }, [deleteProject, prepareProjectLifecycleChange, resetState, state.projectId])
+  }, [currentProjectId, deleteProject, prepareProjectLifecycleChange, resetState])
 
   const handleFileSelect = useCallback(async (file: File) => {
     const uploadResult = await uploadDocument(file)
@@ -356,7 +358,7 @@ function AppContent() {
         >
           <ProjectLibrary
             projects={projects}
-            activeProjectId={state.projectId || activeProjectId}
+            activeProjectId={currentProjectId}
             isLoading={isLoadingProjects}
             onOpenProject={handleOpenProject}
             onNewProject={handleCreateProject}

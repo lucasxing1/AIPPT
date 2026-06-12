@@ -8,6 +8,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { StorageService } from '../services/storageService'
+import { verifyProjectIntegrity } from '../services/projectStore'
 import { Slide, GenerationConfig, ProjectStatus, WorkflowState } from '../types'
 
 /**
@@ -22,6 +23,7 @@ export interface RestoredProject {
   workflow: WorkflowState
   status: ProjectStatus
   lastCompletedSlides: Slide[]
+  missingAssetKeys: string[]
 }
 
 function emptyWorkflow(): WorkflowState {
@@ -70,6 +72,9 @@ export function useStateRestore(): UseStateRestoreReturn {
         
         // 验证数据完整性
         if (project && (project.fileContent || project.slides.length > 0 || project.lastCompletedSlides.length > 0)) {
+          const integrity = await verifyProjectIntegrity(project)
+          if (cancelled) return
+
           setRestoredProject({
             projectId: project.id,
             fileContent: project.fileContent,
@@ -78,7 +83,8 @@ export function useStateRestore(): UseStateRestoreReturn {
             generationConfig: project.generationConfig,
             workflow: project.workflow,
             status: project.status,
-            lastCompletedSlides: project.lastCompletedSlides
+            lastCompletedSlides: project.lastCompletedSlides,
+            missingAssetKeys: integrity.missingAssetKeys
           })
           setHasRestoredData(true)
         }
@@ -152,7 +158,8 @@ export function loadSavedProject(): RestoredProject | null {
     generationConfig: project.generationConfig,
     workflow: emptyWorkflow(),
     status: project.slides.length > 0 ? 'generated' : 'draft',
-    lastCompletedSlides: project.slides
+    lastCompletedSlides: project.slides,
+    missingAssetKeys: []
   }
 }
 

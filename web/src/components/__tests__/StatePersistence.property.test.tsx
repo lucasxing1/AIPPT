@@ -27,6 +27,7 @@ import {
   setActiveProjectId
 } from '../../services/projectStore'
 import {
+  deleteStoredAsset,
   buildDeckOutline,
   buildProjectRecord,
   buildSlide,
@@ -34,7 +35,7 @@ import {
   TEST_GENERATION_CONFIG,
   resetProjectStoreForTests
 } from '../../services/projectStore.test-utils'
-import { RestoredProject, useStateRestore } from '../../hooks/useStateRestore'
+import { RestoredProject, loadSavedProject, useStateRestore } from '../../hooks/useStateRestore'
 
 const LEGACY_STATE_KEY = 'aippt_persisted_state'
 const LEGACY_IMAGE_DB_NAME = 'aippt_slide_images'
@@ -582,6 +583,40 @@ describe('State Persistence Property Tests', () => {
     expect(restored.status).toBe('error')
     expect(restored.slides.map((slide) => slide.id)).toEqual(['current-slide'])
     expect(restored.lastCompletedSlides.map((slide) => slide.id)).toEqual(['completed-slide'])
+  })
+
+  it('reports missing durable image assets when restoring the active project', async () => {
+    const activeProject = await saveProjectRecord(buildProjectRecord({
+      id: 'durable-missing-image',
+      slides: [buildSlide({
+        id: 'missing-image-slide',
+        imageUrl: 'data:image/png;base64,bWlzc2luZw==',
+        imageBase64: 'bWlzc2luZw=='
+      })],
+      lastCompletedSlides: []
+    }))
+    const missingKey = activeProject.slides[0].imageStorageKey || activeProject.slides[0].imageAsset?.key
+    expect(missingKey).toBeTruthy()
+    await deleteStoredAsset(missingKey as string)
+    await setActiveProjectId(activeProject.id)
+    const onRestore = vi.fn()
+
+    render(<RestoreProbe onRestore={onRestore} />)
+
+    await waitFor(() => {
+      expect(onRestore).toHaveBeenCalled()
+    })
+
+    const restored = onRestore.mock.calls.at(-1)?.[0] as RestoredProject & { missingAssetKeys?: string[] }
+    expect(restored.missingAssetKeys).toEqual([missingKey])
+  })
+
+  it('returns an empty missing asset list from the legacy saved project helper', () => {
+    saveProject('# Legacy', 'legacy.md', [], TEST_GENERATION_CONFIG)
+
+    const restored = loadSavedProject() as (RestoredProject & { missingAssetKeys?: string[] }) | null
+
+    expect(restored?.missingAssetKeys).toEqual([])
   })
 
   it('migrates legacy fallback images from the old slide image database', async () => {

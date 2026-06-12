@@ -3,6 +3,23 @@ import { useAppState } from '../contexts/useAppState'
 import { editImage } from '../services/editService'
 import { EditSession, EditHistoryItem, Slide } from '../types'
 
+function editHistoryItemsEqual(left: EditHistoryItem, right: EditHistoryItem): boolean {
+  return (
+    left.imageUrl === right.imageUrl &&
+    left.imageBase64 === right.imageBase64 &&
+    left.instruction === right.instruction &&
+    left.timestamp === right.timestamp
+  )
+}
+
+function editHistoryStartsWith(history: EditHistoryItem[], prefix: EditHistoryItem[]): boolean {
+  if (prefix.length > history.length) {
+    return false
+  }
+
+  return prefix.every((item, index) => editHistoryItemsEqual(history[index], item))
+}
+
 /**
  * 编辑会话管理 Hook
  * 实现多轮编辑逻辑，每次编辑基于最新版本，保存所有历史版本
@@ -25,7 +42,7 @@ export function useEdit() {
       slideId: slide.id,
       originalImage: imageBase64 || imageUrl,
       currentImage: imageBase64 || imageUrl,
-      history: [],
+      history: slide.editHistory || [],
       userInput: ''
     }
 
@@ -156,11 +173,19 @@ export function useEdit() {
     }
 
     const slideId = state.editingSlide.slideId
+    const existingSlide = state.slides.find(slide => slide.id === slideId)
+    const existingHistory = existingSlide?.editHistory || []
+    const sessionHistory = state.editingSlide.history
+    const editHistory = editHistoryStartsWith(sessionHistory, existingHistory)
+      ? sessionHistory
+      : [...existingHistory, ...sessionHistory]
 
     // 更新幻灯片 - 这会立即更新预览面板
     updateSlide(slideId, {
       imageBase64: currentBase64,
-      imageUrl: `data:image/png;base64,${currentBase64}`
+      imageUrl: `data:image/png;base64,${currentBase64}`,
+      editHistory,
+      updatedAt: Date.now()
     })
 
     // 保持选中状态，确保用户可以看到更新后的幻灯片
@@ -169,7 +194,7 @@ export function useEdit() {
     // 结束编辑
     endEdit()
     setEditError(null)
-  }, [state.editingSlide, updateSlide, selectSlide, endEdit])
+  }, [state.editingSlide, state.slides, updateSlide, selectSlide, endEdit])
 
   /**
    * 取消编辑 - 丢弃所有编辑

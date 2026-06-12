@@ -47,6 +47,7 @@ export interface EditSession {
   originalImage: string
   currentImage: string
   history: EditHistoryItem[]
+  savedHistoryLength?: number
   userInput: string
 }
 

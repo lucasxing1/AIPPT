@@ -3,21 +3,8 @@ import { useAppState } from '../contexts/useAppState'
 import { editImage } from '../services/editService'
 import { EditSession, EditHistoryItem, Slide } from '../types'
 
-function editHistoryItemsEqual(left: EditHistoryItem, right: EditHistoryItem): boolean {
-  return (
-    left.imageUrl === right.imageUrl &&
-    left.imageBase64 === right.imageBase64 &&
-    left.instruction === right.instruction &&
-    left.timestamp === right.timestamp
-  )
-}
-
-function editHistoryStartsWith(history: EditHistoryItem[], prefix: EditHistoryItem[]): boolean {
-  if (prefix.length > history.length) {
-    return false
-  }
-
-  return prefix.every((item, index) => editHistoryItemsEqual(history[index], item))
+function cloneEditHistory(history: EditHistoryItem[] = []): EditHistoryItem[] {
+  return history.map(item => ({ ...item }))
 }
 
 /**
@@ -37,12 +24,14 @@ export function useEdit() {
     // 获取图片的 base64 数据
     const imageBase64 = slide.imageBase64 || ''
     const imageUrl = slide.imageUrl || (imageBase64 ? `data:image/png;base64,${imageBase64}` : '')
+    const history = cloneEditHistory(slide.editHistory)
 
     const session: EditSession = {
       slideId: slide.id,
       originalImage: imageBase64 || imageUrl,
       currentImage: imageBase64 || imageUrl,
-      history: slide.editHistory || [],
+      history,
+      savedHistoryLength: history.length,
       userInput: ''
     }
 
@@ -149,11 +138,12 @@ export function useEdit() {
 
     if (index >= 0) {
       // 保留该版本之前的历史（不包括该版本）
-      const newHistory = state.editingSlide.history.slice(0, index)
+      const newHistory = cloneEditHistory(state.editingSlide.history.slice(0, index))
 
       updateEdit({
         currentImage: historyItem.imageBase64,
-        history: newHistory
+        history: newHistory,
+        savedHistoryLength: Math.min(state.editingSlide.savedHistoryLength ?? 0, newHistory.length)
       })
     }
   }, [state.editingSlide, updateEdit])
@@ -174,11 +164,12 @@ export function useEdit() {
 
     const slideId = state.editingSlide.slideId
     const existingSlide = state.slides.find(slide => slide.id === slideId)
-    const existingHistory = existingSlide?.editHistory || []
-    const sessionHistory = state.editingSlide.history
-    const editHistory = editHistoryStartsWith(sessionHistory, existingHistory)
-      ? sessionHistory
-      : [...existingHistory, ...sessionHistory]
+    if (!existingSlide) {
+      setEditError('无法确认编辑：幻灯片不存在')
+      return
+    }
+
+    const editHistory = cloneEditHistory(state.editingSlide.history)
 
     // 更新幻灯片 - 这会立即更新预览面板
     updateSlide(slideId, {

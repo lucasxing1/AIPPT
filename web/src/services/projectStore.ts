@@ -32,6 +32,10 @@ interface CompactedSlides {
   assets: ProjectAssetRecord[]
 }
 
+interface SaveProjectRecordOptions {
+  allowMissingAssets?: boolean
+}
+
 export function createProjectId(): string {
   if (globalThis.crypto?.randomUUID) {
     return globalThis.crypto.randomUUID()
@@ -40,7 +44,10 @@ export function createProjectId(): string {
   return `project-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-export async function saveProjectRecord(project: ProjectRecord): Promise<ProjectRecord> {
+export async function saveProjectRecord(
+  project: ProjectRecord,
+  options: SaveProjectRecordOptions = {}
+): Promise<ProjectRecord> {
   const db = await openDb()
   try {
     const timestamp = Date.now()
@@ -58,7 +65,7 @@ export async function saveProjectRecord(project: ProjectRecord): Promise<Project
       slides: compactedSlides.slides,
       lastCompletedSlides: compactedCompletedSlides.slides
     }
-    return await saveCompactedProjectInTransaction(db, compactProject, pendingAssets)
+    return await saveCompactedProjectInTransaction(db, compactProject, pendingAssets, options)
   } finally {
     db.close()
   }
@@ -434,7 +441,8 @@ function createSlideAssetRef(asset: ProjectAssetRecord): SlideAssetRef {
 async function saveCompactedProjectInTransaction(
   db: IDBDatabase,
   project: ProjectRecord,
-  assets: ProjectAssetRecord[]
+  assets: ProjectAssetRecord[],
+  options: SaveProjectRecordOptions = {}
 ): Promise<ProjectRecord> {
   const transaction = db.transaction([PROJECT_STORE, ASSET_STORE], 'readwrite')
   const done = transactionDone(transaction)
@@ -444,7 +452,7 @@ async function saveCompactedProjectInTransaction(
 
   try {
     assets.forEach((asset) => assetStore.put(asset))
-    await loadReferencedAssets(assetStore, project, assetByKey)
+    await loadReferencedAssets(assetStore, project, assetByKey, options.allowMissingAssets === true)
 
     const normalizedProject: ProjectRecord = {
       ...project,
@@ -465,12 +473,16 @@ async function saveCompactedProjectInTransaction(
 async function loadReferencedAssets(
   assetStore: IDBObjectStore,
   project: ProjectRecord,
-  assetByKey: Map<string, ProjectAssetRecord>
+  assetByKey: Map<string, ProjectAssetRecord>,
+  allowMissingAssets: boolean
 ): Promise<void> {
   for (const key of collectAssetKeys(project)) {
     if (!assetByKey.has(key)) {
       const asset = await requestToPromise<ProjectAssetRecord | undefined>(assetStore.get(key))
       if (!asset) {
+        if (allowMissingAssets) {
+          continue
+        }
         throw new Error(`Missing image asset: ${key}`)
       }
       assetByKey.set(key, asset)

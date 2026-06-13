@@ -619,6 +619,48 @@ describe('State Persistence Property Tests', () => {
     expect(restored?.missingAssetKeys).toEqual([])
   })
 
+  it('restores legacy compact slides when the old image record is missing', async () => {
+    const missingLegacyKey = 'legacy-missing.md:legacy-missing-slide'
+    const slide: Slide = {
+      id: 'legacy-missing-slide',
+      pageNumber: 1,
+      imageUrl: '',
+      imageStorageKey: missingLegacyKey,
+      prompt: 'Legacy prompt with a missing image'
+    }
+    saveState({
+      version: 1,
+      apiConfig: {
+        apiKey: 'legacy-key',
+        baseUrl: ''
+      },
+      currentProject: {
+        fileContent: '# Legacy Missing Image',
+        fileName: 'legacy-missing.md',
+        slides: [slide],
+        generationConfig: TEST_GENERATION_CONFIG
+      }
+    })
+    const onRestore = vi.fn()
+
+    render(<RestoreProbe onRestore={onRestore} />)
+
+    await waitFor(() => {
+      expect(onRestore).toHaveBeenCalled()
+    })
+
+    const restored = onRestore.mock.calls.at(-1)?.[0] as RestoredProject
+    expect(restored.fileContent).toBe('# Legacy Missing Image')
+    expect(restored.slides[0]).toMatchObject({
+      id: 'legacy-missing-slide',
+      pageNumber: 1,
+      imageUrl: '',
+      imageStorageKey: missingLegacyKey,
+      prompt: 'Legacy prompt with a missing image'
+    })
+    expect(restored.missingAssetKeys).toEqual([missingLegacyKey])
+  })
+
   it('migrates legacy fallback images from the old slide image database', async () => {
     const originalSetItem = Storage.prototype.setItem
     vi

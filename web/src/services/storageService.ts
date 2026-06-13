@@ -435,7 +435,9 @@ export class StorageService {
       return null
     }
 
-    const savedProject = await saveProjectRecord(legacyProjectToRecord(legacyProject))
+    const savedProject = await saveProjectRecord(legacyProjectToRecord(legacyProject), {
+      allowMissingAssets: true
+    })
     await setActiveProjectId(savedProject.id)
     if (!StorageService.writeApiConfig(apiConfig)) {
       throw new Error('Failed to preserve legacy API config')

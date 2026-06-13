@@ -289,6 +289,23 @@ describe('IndexedDB project store', () => {
     expect(await readStoredAsset(currentAssetKey('failed-save', 'slide-1'))).toBeNull()
   })
 
+  it('rejects normal saves that reference missing compact assets', async () => {
+    const project = buildProjectRecord({
+      id: 'strict-missing-reference',
+      slides: [{
+        id: 'slide-1',
+        pageNumber: 1,
+        imageUrl: '',
+        imageStorageKey: 'missing:asset',
+        prompt: 'Missing compact image'
+      }],
+      lastCompletedSlides: []
+    })
+
+    await expect(saveProjectRecord(project)).rejects.toThrow('Missing image asset: missing:asset')
+    expect(await getProject('strict-missing-reference')).toBeNull()
+  })
+
   it('rolls back slide assets when the project record write fails', async () => {
     const project = buildProjectRecord({
       id: 'transaction-failure',

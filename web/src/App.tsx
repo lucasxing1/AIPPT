@@ -66,6 +66,7 @@ function AppContent() {
   } = useAppState()
   
   const { generate, cancel: cancelGeneration, isGenerating, progress, error, slides } = useGeneration()
+  const visibleSlides = slides.length > 0 ? slides : state.lastCompletedSlides
   const {
     editSession,
     isEditing,
@@ -85,7 +86,7 @@ function AppContent() {
   const {
     state: exportState,
     startExport
-  } = useExport(slides, state.generationConfig.aspectRatio)
+  } = useExport(visibleSlides, state.generationConfig.aspectRatio)
   const [exportError, setExportError] = useState<string | null>(null)
   const {
     projects,
@@ -433,13 +434,14 @@ function AppContent() {
       }
       rightPanel={
         <RightPanel
-          slides={slides}
+          slides={visibleSlides}
           selectedSlideId={state.selectedSlideId}
           onSlideSelect={handleSlideSelect}
           onSlideEdit={handleSlideEdit}
           onExport={handleExport}
           isExporting={exportState.isExporting}
           exportProgress={exportState.progress}
+          isLoading={isGenerating && slides.length === 0 && state.lastCompletedSlides.length === 0}
         />
       }
     />

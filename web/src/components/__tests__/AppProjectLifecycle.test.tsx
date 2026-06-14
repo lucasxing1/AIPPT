@@ -79,7 +79,12 @@ const mocks = vi.hoisted(() => {
 
   return {
     operations,
+    generationSlides: [slide] as Slide[],
+    generationIsGenerating: true,
+    rightPanelSnapshots: [] as Array<{ slideIds: string[]; isLoading: boolean }>,
+    exportSlideSnapshots: [] as string[][],
     capturedAutoSaveParams: undefined as Record<string, unknown> | undefined,
+    startExport: vi.fn(),
     saveNow: vi.fn(async () => {
       operations.push('save')
     }),
@@ -104,6 +109,7 @@ const mocks = vi.hoisted(() => {
       operations.push('delete')
     }),
     slide,
+    projectRecord,
     projectSummary,
     currentProjectSummary
   }
@@ -127,7 +133,16 @@ vi.mock('../CenterPanel', () => ({
   default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>
 }))
 
-vi.mock('../RightPanel', () => ({ default: () => null }))
+vi.mock('../RightPanel', () => ({
+  default: ({ slides, isLoading }: { slides: Slide[]; isLoading?: boolean }) => {
+    mocks.rightPanelSnapshots.push({
+      slideIds: slides.map(slide => slide.id),
+      isLoading: Boolean(isLoading)
+    })
+
+    return <div data-testid="right-panel-slide-ids">{slides.map(slide => slide.id).join(',')}</div>
+  }
+}))
 vi.mock('../ApiConfigForm', () => ({ default: () => null }))
 vi.mock('../GenerationConfigForm', () => ({ default: () => null }))
 vi.mock('../DesignWorkflowPanel', () => ({
@@ -166,10 +181,14 @@ vi.mock('../../hooks/useEditConflict', () => ({
 }))
 
 vi.mock('../../hooks/useExport', () => ({
-  useExport: () => ({
-    state: { isExporting: false, progress: 0, error: null },
-    startExport: vi.fn()
-  })
+  useExport: (slides: Slide[]) => {
+    mocks.exportSlideSnapshots.push(slides.map(slide => slide.id))
+
+    return {
+      state: { isExporting: false, progress: 0, error: null },
+      startExport: mocks.startExport
+    }
+  }
 }))
 
 vi.mock('../../hooks/useStateRestore', () => ({
@@ -185,10 +204,10 @@ vi.mock('../../hooks/useGeneration', () => ({
   useGeneration: () => ({
     generate: vi.fn(),
     cancel: mocks.cancelGeneration,
-    isGenerating: true,
+    isGenerating: mocks.generationIsGenerating,
     progress: { current: 1, total: 3, status: 'generating', message: 'Generating' },
     error: null,
-    slides: [mocks.slide]
+    slides: mocks.generationSlides
   })
 }))
 
@@ -220,7 +239,16 @@ vi.mock('../../hooks/useProjectManager', () => ({
 describe('App project lifecycle safeguards', () => {
   afterEach(() => {
     mocks.operations.length = 0
+    mocks.generationSlides = [mocks.slide]
+    mocks.generationIsGenerating = true
+    mocks.rightPanelSnapshots.length = 0
+    mocks.exportSlideSnapshots.length = 0
     mocks.capturedAutoSaveParams = undefined
+    mocks.projectRecord.fileName = 'saved.md'
+    mocks.projectRecord.fileContent = '# Saved'
+    mocks.projectRecord.slides = []
+    mocks.projectRecord.lastCompletedSlides = []
+    mocks.projectRecord.status = 'generated'
     vi.clearAllMocks()
     vi.restoreAllMocks()
   })
@@ -299,6 +327,39 @@ describe('App project lifecycle safeguards', () => {
     })
     expect(mocks.openProject).not.toHaveBeenCalled()
     expect(mocks.cancelGeneration).not.toHaveBeenCalled()
+  })
+
+  it('renders and exports the last completed deck while regeneration has no current slides yet', async () => {
+    const previousSlide: Slide = {
+      ...mocks.slide,
+      id: 'previous-completed-slide',
+      imageUrl: 'data:image/png;base64,previous',
+      imageBase64: 'previous',
+      prompt: 'previous prompt'
+    }
+    mocks.generationSlides = []
+    mocks.projectRecord.fileContent = '# Regenerating'
+    mocks.projectRecord.slides = []
+    mocks.projectRecord.lastCompletedSlides = [previousSlide]
+    mocks.projectRecord.status = 'generating'
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: /打开 Saved Deck/ }))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('workflow-file-content')).toHaveTextContent('# Regenerating')
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('right-panel-slide-ids')).toHaveTextContent('previous-completed-slide')
+    })
+
+    const latestRightPanel = mocks.rightPanelSnapshots[mocks.rightPanelSnapshots.length - 1]
+    expect(latestRightPanel).toEqual({
+      slideIds: ['previous-completed-slide'],
+      isLoading: false
+    })
+    expect(mocks.exportSlideSnapshots).toContainEqual(['previous-completed-slide'])
   })
 
   it('does not create a new project when the current autosave flush fails', async () => {

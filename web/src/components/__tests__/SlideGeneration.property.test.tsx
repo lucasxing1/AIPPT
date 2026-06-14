@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import * as fc from 'fast-check'
+import { appReducerForTests, initialAppStateForTests } from '../../contexts/AppStateContext'
+import { buildSlide } from '../../services/projectStore.test-utils'
 import { Slide } from '../../types'
 
 /**
@@ -214,4 +216,19 @@ describe('Slide Generation Order Property Tests', () => {
       )
     })
   })
+})
+
+it('preserves last completed deck while new generation is in progress', () => {
+  const previousDeck = [buildSlide({ id: 'slide-old', imageBase64: 'old', imageUrl: 'data:image/png;base64,old' })]
+  const generating = appReducerForTests({
+    ...initialAppStateForTests,
+    fileContent: '# L9',
+    fileName: 'L9.md',
+    slides: previousDeck,
+    lastCompletedSlides: previousDeck,
+    status: 'generated'
+  }, { type: 'START_GENERATION', payload: { runId: 'run-1' } })
+
+  expect(generating.slides).toEqual([])
+  expect(generating.lastCompletedSlides).toEqual(previousDeck)
 })

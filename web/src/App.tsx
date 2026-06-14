@@ -437,7 +437,7 @@ function AppContent() {
           slides={visibleSlides}
           selectedSlideId={state.selectedSlideId}
           onSlideSelect={handleSlideSelect}
-          onSlideEdit={handleSlideEdit}
+          onSlideEdit={slides.length > 0 ? handleSlideEdit : undefined}
           onExport={handleExport}
           isExporting={exportState.isExporting}
           exportProgress={exportState.progress}

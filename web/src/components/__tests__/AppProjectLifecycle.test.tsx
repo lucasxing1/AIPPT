@@ -81,7 +81,7 @@ const mocks = vi.hoisted(() => {
     operations,
     generationSlides: [slide] as Slide[],
     generationIsGenerating: true,
-    rightPanelSnapshots: [] as Array<{ slideIds: string[]; isLoading: boolean }>,
+    rightPanelSnapshots: [] as Array<{ slideIds: string[]; isLoading: boolean; hasEditHandler: boolean }>,
     exportSlideSnapshots: [] as string[][],
     capturedAutoSaveParams: undefined as Record<string, unknown> | undefined,
     startExport: vi.fn(),
@@ -134,10 +134,19 @@ vi.mock('../CenterPanel', () => ({
 }))
 
 vi.mock('../RightPanel', () => ({
-  default: ({ slides, isLoading }: { slides: Slide[]; isLoading?: boolean }) => {
+  default: ({
+    slides,
+    isLoading,
+    onSlideEdit
+  }: {
+    slides: Slide[]
+    isLoading?: boolean
+    onSlideEdit?: (slideId: string) => void
+  }) => {
     mocks.rightPanelSnapshots.push({
       slideIds: slides.map(slide => slide.id),
-      isLoading: Boolean(isLoading)
+      isLoading: Boolean(isLoading),
+      hasEditHandler: typeof onSlideEdit === 'function'
     })
 
     return <div data-testid="right-panel-slide-ids">{slides.map(slide => slide.id).join(',')}</div>
@@ -357,7 +366,8 @@ describe('App project lifecycle safeguards', () => {
     const latestRightPanel = mocks.rightPanelSnapshots[mocks.rightPanelSnapshots.length - 1]
     expect(latestRightPanel).toEqual({
       slideIds: ['previous-completed-slide'],
-      isLoading: false
+      isLoading: false,
+      hasEditHandler: false
     })
     expect(mocks.exportSlideSnapshots).toContainEqual(['previous-completed-slide'])
   })

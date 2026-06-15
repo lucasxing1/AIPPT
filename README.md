@@ -28,7 +28,7 @@ NotebookLM 的 PPT 能力更像“一键生成结果”，中间设计过程和�
 - ✏️ **整页图像编辑**：支持对每页幻灯片单独二次编辑、历史回退和确认替换
 - 🔀 **三模型角色**：支持 `prompt_model`、`image_model`、`edit_model` 分别配置
 - 🖼️ **图像结果兼容**：兼容 URL、Markdown 图片链接、data URL、`b64_json` 和纯 base64
-- 💾 **状态持久化**：自动保存工作进度，支持会话恢复
+- 💾 **多项目本地留存**：支持在浏览器本地保存多个 PPT 项目，恢复资料、设计大纲、逐页设计、生成图片和单页编辑历史
 
 ## 🚀 快速开始
 
@@ -82,6 +82,15 @@ python main.py -i doc/L9.md -n 5 --prompt-only -o prompts.json
 # 从 Prompt 文件生成
 python main.py --from-prompt prompts.json
 ```
+
+### 本地项目保存
+
+AIPPT 会把项目内容保存在当前浏览器 Profile 的 IndexedDB 中，并用 localStorage 保存当前打开的项目 ID 和界面偏好。保存内容包括上传资料、PPT 内容设置、设计大纲、逐页设计、生成图片、编辑后的版本和导出所需图片数据。
+
+注意：
+- 清理浏览器站点数据会删除本地项目。
+- 换浏览器或换设备不会自动同步项目。
+- API Key 仍按本地配置策略处理，不会写入项目分享文件。
 
 ### 3. WebUI 使用流程
 

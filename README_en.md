@@ -28,7 +28,7 @@ NotebookLM's PPT feature is closer to a one-click result generator, with limited
 - ✏️ **Full-page image editing**: Edit each generated slide independently, revert history, and confirm replacements
 - 🔀 **Three model roles**: Configure `prompt_model`, `image_model`, and `edit_model` separately
 - 🖼️ **Image result compatibility**: Accepts URLs, Markdown image links, data URLs, `b64_json`, and raw base64
-- 💾 **State Persistence**: Auto-save work progress with session recovery
+- 💾 **Local multi-project persistence**: Save multiple PPT projects in the browser, including source content, outline, page designs, generated images, and per-slide edit history
 
 ## 🚀 Quick Start
 
@@ -82,6 +82,15 @@ python main.py -i doc/L9.md -n 5 --prompt-only -o prompts.json
 # Generate from prompt file
 python main.py --from-prompt prompts.json
 ```
+
+### Local Project Persistence
+
+AIPPT stores projects in the current browser profile's IndexedDB, with localStorage used only for the active project id and UI preferences. Saved data includes uploaded sources, content settings, design outlines, page designs, generated images, edited versions, and image data needed for export.
+
+Notes:
+- Clearing browser site data removes local projects.
+- Projects do not automatically sync across browsers or devices.
+- API keys still follow the local configuration strategy and are not written into project export files.
 
 ### 3. WebUI Usage Flow
 

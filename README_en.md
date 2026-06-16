@@ -17,7 +17,7 @@ NotebookLM's PPT feature is closer to a one-click result generator, with limited
 - **Visible process**: Review the deck outline and page-by-page design notes before image generation
 - **Per-slide control**: Edit any slide independently, generate new versions, revert history, and confirm replacements
 - **Model control**: Configure separate OpenAI-compatible models for text planning, image generation, and image editing
-- **Local-first config**: Store settings in local `config.yaml`; API keys are not exposed to the frontend or browser
+- **Local-first config**: Manage model connections through local `config.yaml` or WebUI local API configuration; saved projects and exported files do not include API keys
 - **Export-ready output**: Export generated decks to PDF/PPTX for presentation or further editing
 
 ## ✨ Features
@@ -85,12 +85,12 @@ python main.py --from-prompt prompts.json
 
 ### Local Project Persistence
 
-AIPPT stores projects in the current browser profile's IndexedDB, with localStorage used only for the active project id and UI preferences. Saved data includes uploaded sources, content settings, design outlines, page designs, generated images, edited versions, and image data needed for export.
+AIPPT stores project content and image assets in the current browser profile's IndexedDB, and uses localStorage for the active project id, UI preferences, and local API configuration. Saved project data includes uploaded sources, content settings, design outlines, page designs, generated images, edited versions, and image data needed for export.
 
 Notes:
 - Clearing browser site data removes local projects.
 - Projects do not automatically sync across browsers or devices.
-- API keys still follow the local configuration strategy and are not written into project export files.
+- API keys belong to local API configuration; they are not written into saved project records and are not included in exported PDF/PPTX files.
 
 ### 3. WebUI Usage Flow
 

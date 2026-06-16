@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import DesignWorkflowPanel from '../DesignWorkflowPanel'
 import { UiPreferencesProvider } from '../../contexts/UiPreferencesContext'
@@ -128,10 +128,10 @@ function renderPanel({
     )
   }
 
-  render(
+  const view = render(
     <ControlledPanel />
   )
-  return { onWorkflowChange, onPromptsReady, onClearPrompts }
+  return { ...view, onWorkflowChange, onPromptsReady, onClearPrompts }
 }
 
 describe('DesignWorkflowPanel', () => {
@@ -397,6 +397,89 @@ describe('DesignWorkflowPanel', () => {
       expect(screen.getByLabelText('大纲标题')).toHaveValue('Edited while outline loads')
     })
     expect(screen.queryByDisplayValue('Stale regenerated outline')).not.toBeInTheDocument()
+  })
+
+  it('ignores outline responses that resolve after the panel unmounts', async () => {
+    const outlineResponse = createDeferred<{ success: true; outline: DeckOutline }>()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => outlineResponse.promise
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const onWorkflowChange = vi.fn()
+
+    const { unmount } = renderPanel({ onWorkflowChange })
+
+    fireEvent.click(screen.getByRole('button', { name: '生成设计大纲' }))
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(onWorkflowChange).toHaveBeenCalledTimes(1)
+    })
+    expect(onWorkflowChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'outline_loading'
+    }))
+
+    unmount()
+    await act(async () => {
+      outlineResponse.resolve({
+        success: true,
+        outline: {
+          ...outline,
+          title: 'Unmounted stale outline'
+        }
+      })
+      await outlineResponse.promise
+      await Promise.resolve()
+    })
+
+    expect(onWorkflowChange).toHaveBeenCalledTimes(1)
+    expect(onWorkflowChange).not.toHaveBeenCalledWith(expect.objectContaining({
+      status: 'outline_ready',
+      outline: expect.objectContaining({ title: 'Unmounted stale outline' })
+    }))
+  })
+
+  it('ignores prompt responses that resolve after the panel unmounts', async () => {
+    const promptResponse = createDeferred<{ success: true; slide_prompts: ConfirmedSlidePrompt[] }>()
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => promptResponse.promise
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const onWorkflowChange = vi.fn()
+    const onPromptsReady = vi.fn()
+
+    const { unmount } = renderPanel({
+      initialWorkflow: {
+        ...emptyWorkflow(),
+        status: 'outline_ready',
+        outline
+      },
+      onWorkflowChange,
+      onPromptsReady
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '确认大纲并生成逐页设计' }))
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(onWorkflowChange).toHaveBeenCalledTimes(1)
+    })
+    expect(onWorkflowChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      status: 'prompts_loading'
+    }))
+
+    unmount()
+    await act(async () => {
+      promptResponse.resolve({ success: true, slide_prompts: prompts })
+      await promptResponse.promise
+      await Promise.resolve()
+    })
+
+    expect(onWorkflowChange).toHaveBeenCalledTimes(1)
+    expect(onWorkflowChange).not.toHaveBeenCalledWith(expect.objectContaining({
+      status: 'prompts_ready'
+    }))
+    expect(onPromptsReady).not.toHaveBeenCalled()
   })
 
   it.each([

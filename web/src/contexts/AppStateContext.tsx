@@ -286,15 +286,30 @@ function appReducer(state: AppState, action: AppAction): AppState {
       }
     }
 
-    case 'UPDATE_SLIDE':
+    case 'UPDATE_SLIDE': {
+      const updatedSlides = state.slides.map(slide =>
+        slide.id === action.payload.id
+          ? { ...slide, ...action.payload.updates }
+          : slide
+      )
+      const hasCurrentSlide = state.slides.some(slide => slide.id === action.payload.id)
+      const shouldUpdateCompletedSlides = !state.isGenerating &&
+        state.status === 'generated' &&
+        hasCurrentSlide &&
+        state.lastCompletedSlides.some(slide => slide.id === action.payload.id)
+
       return {
         ...state,
-        slides: state.slides.map(slide =>
-          slide.id === action.payload.id
-            ? { ...slide, ...action.payload.updates }
-            : slide
-        )
+        slides: updatedSlides,
+        lastCompletedSlides: shouldUpdateCompletedSlides
+          ? state.lastCompletedSlides.map(slide =>
+            slide.id === action.payload.id
+              ? { ...slide, ...action.payload.updates }
+              : slide
+          )
+          : state.lastCompletedSlides
       }
+    }
 
     case 'SET_SLIDES':
       return {

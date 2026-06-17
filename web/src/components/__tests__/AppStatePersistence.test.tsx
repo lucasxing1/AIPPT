@@ -146,6 +146,46 @@ describe('AppState persistence reducer behavior', () => {
     expect(result.lastCompletedSlides).toEqual(generatedSlides)
   })
 
+  it('does not sync in-progress slide updates into the previous completed deck', () => {
+    const previousCompletedSlide = slide({
+      id: 'slide-1',
+      pageNumber: 1,
+      imageBase64: 'completed',
+      imageUrl: 'data:image/png;base64,completed'
+    })
+    const partialGeneratingSlide = slide({
+      id: 'slide-1',
+      pageNumber: 1,
+      imageBase64: 'partial',
+      imageUrl: 'data:image/png;base64,partial'
+    })
+
+    const result = appReducerForTests(
+      staleState({
+        slides: [partialGeneratingSlide],
+        lastCompletedSlides: [previousCompletedSlide],
+        status: 'generating',
+        isGenerating: true
+      }),
+      {
+        type: 'UPDATE_SLIDE',
+        payload: {
+          id: 'slide-1',
+          updates: {
+            imageBase64: 'partial-edited',
+            imageUrl: 'data:image/png;base64,partial-edited'
+          }
+        }
+      }
+    )
+
+    expect(result.slides[0]).toMatchObject({
+      imageBase64: 'partial-edited',
+      imageUrl: 'data:image/png;base64,partial-edited'
+    })
+    expect(result.lastCompletedSlides).toEqual([previousCompletedSlide])
+  })
+
   it('restores project-aware state with sorted unique slides and completed-slide fallback', () => {
     const duplicateFirst = slide({ id: 'slide-a', pageNumber: 3, prompt: 'older' })
     const duplicateLast = slide({ id: 'slide-a', pageNumber: 1, prompt: 'newer' })

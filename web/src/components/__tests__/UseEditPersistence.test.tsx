@@ -89,6 +89,54 @@ describe('useEdit persisted edit history', () => {
     expect(result.current.edit.editSession).toBeNull()
   })
 
+  it('keeps last completed slide in sync after confirming an edit', () => {
+    const editHistoryItem: EditHistoryItem = {
+      imageUrl: 'data:image/png;base64,b3JpZ2luYWw=',
+      imageBase64: 'b3JpZ2luYWw=',
+      instruction: 'make the closing chart clearer',
+      timestamp: 1700000003000
+    }
+    const slide = buildSlide({
+      imageBase64: 'b3JpZ2luYWw=',
+      imageUrl: 'data:image/png;base64,b3JpZ2luYWw='
+    })
+    const { result } = renderHook(() => useEditHarness(), { wrapper: AppStateProvider })
+
+    act(() => {
+      result.current.app.addSlide(slide)
+      result.current.app.completeGeneration()
+      result.current.edit.beginEdit(slide)
+    })
+
+    act(() => {
+      result.current.app.updateEdit({
+        currentImage: 'ZWRpdGVk',
+        history: [editHistoryItem]
+      })
+    })
+
+    act(() => {
+      result.current.edit.confirmEdit()
+    })
+
+    const updatedSlide = result.current.app.state.slides.find(item => item.id === slide.id)
+    expect(updatedSlide?.imageBase64).toBe('ZWRpdGVk')
+    expect(updatedSlide?.editHistory).toEqual([editHistoryItem])
+
+    act(() => {
+      result.current.app.startGeneration('run-1')
+    })
+
+    expect(result.current.app.state.slides).toEqual([])
+    expect(result.current.app.state.lastCompletedSlides[0]).toMatchObject({
+      id: slide.id,
+      imageBase64: 'ZWRpdGVk',
+      imageUrl: 'data:image/png;base64,ZWRpdGVk',
+      editHistory: [editHistoryItem]
+    })
+    expect(result.current.app.state.lastCompletedSlides[0]?.imageBase64).not.toBe('b3JpZ2luYWw=')
+  })
+
   it('persists truncated history after reverting to a persisted version', () => {
     const slide = buildSlide({ editHistory: twoItemPersistedHistory })
     const { result } = renderHook(() => useEditHarness(), { wrapper: AppStateProvider })

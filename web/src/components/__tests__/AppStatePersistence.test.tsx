@@ -186,6 +186,70 @@ describe('AppState persistence reducer behavior', () => {
     expect(result.lastCompletedSlides).toEqual([previousCompletedSlide])
   })
 
+  it('keeps edited completed slide as fallback after workflow returns to prompts_ready', () => {
+    const completedSlide = slide({
+      id: 'slide-1',
+      pageNumber: 1,
+      imageBase64: 'original',
+      imageUrl: 'data:image/png;base64,original'
+    })
+    const editedHistory = [{
+      imageBase64: 'edited-history',
+      imageUrl: 'data:image/png;base64,edited-history',
+      instruction: 'Make the chart clearer',
+      timestamp: 1712131200000
+    }]
+
+    const completed = appReducerForTests(
+      staleState({
+        slides: [completedSlide],
+        lastCompletedSlides: [],
+        status: 'generating',
+        generationRunId: 'run-1',
+        isGenerating: true
+      }),
+      { type: 'COMPLETE_GENERATION' }
+    )
+    const promptsReady = appReducerForTests(
+      completed,
+      {
+        type: 'SET_WORKFLOW',
+        payload: workflow({
+          status: 'prompts_ready',
+          outline: buildDeckOutline(),
+          slidePrompts: [buildSlidePrompt()]
+        })
+      }
+    )
+    const edited = appReducerForTests(
+      promptsReady,
+      {
+        type: 'UPDATE_SLIDE',
+        payload: {
+          id: 'slide-1',
+          updates: {
+            imageBase64: 'edited',
+            imageUrl: 'data:image/png;base64,edited',
+            editHistory: editedHistory
+          }
+        }
+      }
+    )
+    const generatingAgain = appReducerForTests(
+      edited,
+      { type: 'START_GENERATION', payload: { runId: 'run-2' } }
+    )
+
+    expect(promptsReady.status).toBe('prompts_ready')
+    expect(generatingAgain.slides).toEqual([])
+    expect(generatingAgain.lastCompletedSlides[0]).toMatchObject({
+      id: 'slide-1',
+      imageBase64: 'edited',
+      imageUrl: 'data:image/png;base64,edited',
+      editHistory: editedHistory
+    })
+  })
+
   it('restores project-aware state with sorted unique slides and completed-slide fallback', () => {
     const duplicateFirst = slide({ id: 'slide-a', pageNumber: 3, prompt: 'older' })
     const duplicateLast = slide({ id: 'slide-a', pageNumber: 1, prompt: 'newer' })

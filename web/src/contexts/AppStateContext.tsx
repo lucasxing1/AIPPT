@@ -294,7 +294,6 @@ function appReducer(state: AppState, action: AppAction): AppState {
       )
       const hasCurrentSlide = state.slides.some(slide => slide.id === action.payload.id)
       const shouldUpdateCompletedSlides = !state.isGenerating &&
-        state.status === 'generated' &&
         hasCurrentSlide &&
         state.lastCompletedSlides.some(slide => slide.id === action.payload.id)
 

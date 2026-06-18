@@ -293,7 +293,9 @@ function appReducer(state: AppState, action: AppAction): AppState {
           : slide
       )
       const hasCurrentSlide = state.slides.some(slide => slide.id === action.payload.id)
+      const hasEditableCompletedDeck = state.status === 'generated' || state.status === 'prompts_ready'
       const shouldUpdateCompletedSlides = !state.isGenerating &&
+        hasEditableCompletedDeck &&
         hasCurrentSlide &&
         state.lastCompletedSlides.some(slide => slide.id === action.payload.id)
 

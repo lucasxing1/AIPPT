@@ -186,6 +186,77 @@ describe('AppState persistence reducer behavior', () => {
     expect(result.lastCompletedSlides).toEqual([previousCompletedSlide])
   })
 
+  it('does not sync error-state partial regeneration edits into the previous completed deck', () => {
+    const completedHistory = [{
+      imageBase64: 'completed-history',
+      imageUrl: 'data:image/png;base64,completed-history',
+      instruction: 'Sharpen the original completed slide',
+      timestamp: 1712131200000
+    }]
+    const previousCompletedSlide = slide({
+      id: 'slide-1',
+      pageNumber: 1,
+      imageBase64: 'completed-original',
+      imageUrl: 'data:image/png;base64,completed-original',
+      editHistory: completedHistory
+    })
+    const previousCompletedDeck = [previousCompletedSlide]
+    const partialRegenerationSlide = slide({
+      id: 'slide-1',
+      pageNumber: 1,
+      imageBase64: 'partial-regeneration',
+      imageUrl: 'data:image/png;base64,partial-regeneration'
+    })
+    const partialEditHistory = [{
+      imageBase64: 'partial-edited-history',
+      imageUrl: 'data:image/png;base64,partial-edited-history',
+      instruction: 'Edit the failed partial slide',
+      timestamp: 1712131300000
+    }]
+
+    const generating = appReducerForTests(
+      staleState({
+        slides: previousCompletedDeck,
+        lastCompletedSlides: previousCompletedDeck,
+        status: 'generated',
+        isGenerating: false
+      }),
+      { type: 'START_GENERATION', payload: { runId: 'run-2' } }
+    )
+    const withPartialSlide = appReducerForTests(
+      generating,
+      { type: 'ADD_SLIDE', payload: partialRegenerationSlide }
+    )
+    const errored = appReducerForTests(
+      withPartialSlide,
+      { type: 'GENERATION_ERROR', payload: 'regeneration failed' }
+    )
+    const edited = appReducerForTests(
+      errored,
+      {
+        type: 'UPDATE_SLIDE',
+        payload: {
+          id: 'slide-1',
+          updates: {
+            imageBase64: 'partial-edited',
+            imageUrl: 'data:image/png;base64,partial-edited',
+            editHistory: partialEditHistory
+          }
+        }
+      }
+    )
+
+    expect(errored.status).toBe('error')
+    expect(errored.isGenerating).toBe(false)
+    expect(errored.slides).toEqual([partialRegenerationSlide])
+    expect(edited.slides[0]).toMatchObject({
+      imageBase64: 'partial-edited',
+      imageUrl: 'data:image/png;base64,partial-edited',
+      editHistory: partialEditHistory
+    })
+    expect(edited.lastCompletedSlides).toEqual(previousCompletedDeck)
+  })
+
   it('keeps edited completed slide as fallback after workflow returns to prompts_ready', () => {
     const completedSlide = slide({
       id: 'slide-1',

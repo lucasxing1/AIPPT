@@ -131,6 +131,55 @@ function dedupeSlides(slides: Slide[]): Slide[] {
   return sortSlides(Array.from(byId.values()))
 }
 
+function slideAssetRefsEqual(first: Slide['imageAsset'], second: Slide['imageAsset']): boolean {
+  if (first === second) {
+    return true
+  }
+
+  if (!first || !second) {
+    return !first && !second
+  }
+
+  return first.key === second.key &&
+    first.mimeType === second.mimeType &&
+    first.byteLength === second.byteLength &&
+    first.sha256 === second.sha256
+}
+
+function editHistoriesEqual(first: Slide['editHistory'], second: Slide['editHistory']): boolean {
+  if (first === second) {
+    return true
+  }
+
+  if (!first || !second || first.length !== second.length) {
+    return !first && !second
+  }
+
+  return first.every((item, index) => {
+    const other = second[index]
+    return item.imageUrl === other.imageUrl &&
+      item.imageBase64 === other.imageBase64 &&
+      item.instruction === other.instruction &&
+      item.timestamp === other.timestamp
+  })
+}
+
+function matchesCompletedSlideSnapshot(currentSlide: Slide | undefined, completedSlide: Slide | undefined): boolean {
+  if (!currentSlide || !completedSlide) {
+    return false
+  }
+
+  return currentSlide.id === completedSlide.id &&
+    currentSlide.pageNumber === completedSlide.pageNumber &&
+    currentSlide.imageUrl === completedSlide.imageUrl &&
+    currentSlide.imageBase64 === completedSlide.imageBase64 &&
+    currentSlide.imageStorageKey === completedSlide.imageStorageKey &&
+    currentSlide.prompt === completedSlide.prompt &&
+    currentSlide.updatedAt === completedSlide.updatedAt &&
+    slideAssetRefsEqual(currentSlide.imageAsset, completedSlide.imageAsset) &&
+    editHistoriesEqual(currentSlide.editHistory, completedSlide.editHistory)
+}
+
 function resetProjectRuntimeState(state: AppState): AppState {
   return {
     ...state,
@@ -287,17 +336,17 @@ function appReducer(state: AppState, action: AppAction): AppState {
     }
 
     case 'UPDATE_SLIDE': {
+      const currentSlide = state.slides.find(slide => slide.id === action.payload.id)
+      const completedSlide = state.lastCompletedSlides.find(slide => slide.id === action.payload.id)
       const updatedSlides = state.slides.map(slide =>
         slide.id === action.payload.id
           ? { ...slide, ...action.payload.updates }
           : slide
       )
-      const hasCurrentSlide = state.slides.some(slide => slide.id === action.payload.id)
       const hasEditableCompletedDeck = state.status === 'generated' || state.status === 'prompts_ready'
       const shouldUpdateCompletedSlides = !state.isGenerating &&
-        hasEditableCompletedDeck &&
-        hasCurrentSlide &&
-        state.lastCompletedSlides.some(slide => slide.id === action.payload.id)
+        (hasEditableCompletedDeck || matchesCompletedSlideSnapshot(currentSlide, completedSlide)) &&
+        Boolean(currentSlide && completedSlide)
 
       return {
         ...state,

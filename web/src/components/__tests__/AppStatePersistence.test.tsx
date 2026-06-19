@@ -321,6 +321,66 @@ describe('AppState persistence reducer behavior', () => {
     })
   })
 
+  it('keeps edited completed slide as fallback after workflow errors', () => {
+    const completedSlide = slide({
+      id: 'slide-1',
+      pageNumber: 1,
+      imageBase64: 'original',
+      imageUrl: 'data:image/png;base64,original'
+    })
+    const editedHistory = [{
+      imageBase64: 'edited-history',
+      imageUrl: 'data:image/png;base64,edited-history',
+      instruction: 'Make the workflow-error deck clearer',
+      timestamp: 1712131200000
+    }]
+    const completedDeck = [completedSlide]
+    const workflowError = appReducerForTests(
+      staleState({
+        slides: completedDeck,
+        lastCompletedSlides: completedDeck,
+        status: 'generated',
+        isGenerating: false
+      }),
+      {
+        type: 'SET_WORKFLOW',
+        payload: workflow({
+          status: 'error',
+          outline: buildDeckOutline(),
+          slidePrompts: [buildSlidePrompt()],
+          error: 'outline generation failed'
+        })
+      }
+    )
+    const edited = appReducerForTests(
+      workflowError,
+      {
+        type: 'UPDATE_SLIDE',
+        payload: {
+          id: 'slide-1',
+          updates: {
+            imageBase64: 'edited',
+            imageUrl: 'data:image/png;base64,edited',
+            editHistory: editedHistory
+          }
+        }
+      }
+    )
+    const generatingAgain = appReducerForTests(
+      edited,
+      { type: 'START_GENERATION', payload: { runId: 'run-2' } }
+    )
+
+    expect(workflowError.status).toBe('error')
+    expect(generatingAgain.slides).toEqual([])
+    expect(generatingAgain.lastCompletedSlides[0]).toMatchObject({
+      id: 'slide-1',
+      imageBase64: 'edited',
+      imageUrl: 'data:image/png;base64,edited',
+      editHistory: editedHistory
+    })
+  })
+
   it('restores project-aware state with sorted unique slides and completed-slide fallback', () => {
     const duplicateFirst = slide({ id: 'slide-a', pageNumber: 3, prompt: 'older' })
     const duplicateLast = slide({ id: 'slide-a', pageNumber: 1, prompt: 'newer' })

@@ -140,8 +140,7 @@ function slideAssetRefsEqual(first: Slide['imageAsset'], second: Slide['imageAss
     return !first && !second
   }
 
-  return first.key === second.key &&
-    first.mimeType === second.mimeType &&
+  return first.mimeType === second.mimeType &&
     first.byteLength === second.byteLength &&
     first.sha256 === second.sha256
 }
@@ -173,7 +172,6 @@ function matchesCompletedSlideSnapshot(currentSlide: Slide | undefined, complete
     currentSlide.pageNumber === completedSlide.pageNumber &&
     currentSlide.imageUrl === completedSlide.imageUrl &&
     currentSlide.imageBase64 === completedSlide.imageBase64 &&
-    currentSlide.imageStorageKey === completedSlide.imageStorageKey &&
     currentSlide.prompt === completedSlide.prompt &&
     currentSlide.updatedAt === completedSlide.updatedAt &&
     slideAssetRefsEqual(currentSlide.imageAsset, completedSlide.imageAsset) &&

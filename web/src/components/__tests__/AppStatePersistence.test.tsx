@@ -381,6 +381,98 @@ describe('AppState persistence reducer behavior', () => {
     })
   })
 
+  it('keeps restored completed slide edits as fallback when image bucket keys differ after workflow errors', () => {
+    const initialHistory = [{
+      imageBase64: 'history-original',
+      imageUrl: 'data:image/png;base64,history-original',
+      instruction: 'Tighten the opening slide',
+      timestamp: 1712131100000
+    }]
+    const sharedAssetMetadata = {
+      mimeType: 'image/png',
+      byteLength: 1024,
+      sha256: 'same-image-sha256'
+    }
+    const currentSlide = slide({
+      id: 'slide-1',
+      pageNumber: 1,
+      imageBase64: 'same-completed-image',
+      imageUrl: 'data:image/png;base64,same-completed-image',
+      imageStorageKey: 'project-1:slides:slide-1:image',
+      imageAsset: {
+        key: 'project-1:slides:slide-1:image',
+        ...sharedAssetMetadata
+      },
+      prompt: 'Generate a cover page',
+      editHistory: initialHistory,
+      updatedAt: 1712131200000
+    })
+    const completedSlide = slide({
+      id: 'slide-1',
+      pageNumber: 1,
+      imageBase64: 'same-completed-image',
+      imageUrl: 'data:image/png;base64,same-completed-image',
+      imageStorageKey: 'project-1:lastCompletedSlides:slide-1:image',
+      imageAsset: {
+        key: 'project-1:lastCompletedSlides:slide-1:image',
+        ...sharedAssetMetadata
+      },
+      prompt: 'Generate a cover page',
+      editHistory: initialHistory,
+      updatedAt: 1712131200000
+    })
+    const editedHistory = [{
+      imageBase64: 'edited-history',
+      imageUrl: 'data:image/png;base64,edited-history',
+      instruction: 'Make the restored workflow-error deck clearer',
+      timestamp: 1712131300000
+    }]
+    const workflowError = appReducerForTests(
+      staleState({
+        slides: [currentSlide],
+        lastCompletedSlides: [completedSlide],
+        status: 'generated',
+        isGenerating: false
+      }),
+      {
+        type: 'SET_WORKFLOW',
+        payload: workflow({
+          status: 'error',
+          outline: buildDeckOutline(),
+          slidePrompts: [buildSlidePrompt()],
+          error: 'workflow failed after restore'
+        })
+      }
+    )
+    const edited = appReducerForTests(
+      workflowError,
+      {
+        type: 'UPDATE_SLIDE',
+        payload: {
+          id: 'slide-1',
+          updates: {
+            imageBase64: 'edited',
+            imageUrl: 'data:image/png;base64,edited',
+            editHistory: editedHistory
+          }
+        }
+      }
+    )
+    const generatingAgain = appReducerForTests(
+      edited,
+      { type: 'START_GENERATION', payload: { runId: 'run-2' } }
+    )
+
+    expect(workflowError.status).toBe('error')
+    expect(generatingAgain.slides).toEqual([])
+    expect(generatingAgain.lastCompletedSlides[0]).toMatchObject({
+      id: 'slide-1',
+      imageBase64: 'edited',
+      imageUrl: 'data:image/png;base64,edited',
+      editHistory: editedHistory
+    })
+  })
+
   it('restores project-aware state with sorted unique slides and completed-slide fallback', () => {
     const duplicateFirst = slide({ id: 'slide-a', pageNumber: 3, prompt: 'older' })
     const duplicateLast = slide({ id: 'slide-a', pageNumber: 1, prompt: 'newer' })

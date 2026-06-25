@@ -61,7 +61,7 @@ export function useProjectManager() {
       lastOpenedAt: Date.now()
     }
 
-    const savedProject = await saveProjectRecord(openedProject)
+    const savedProject = await saveProjectRecord(openedProject, { allowMissingAssets: true })
     await setActiveProjectId(id)
     await refreshProjects()
     return hydrateProjectImages(savedProject)

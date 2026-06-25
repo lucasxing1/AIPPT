@@ -2,8 +2,9 @@ import { useState, useCallback } from 'react'
 import { EditSession, Slide } from '../types'
 
 interface PendingEditAction {
-  type: 'switch' | 'cancel'
+  type: 'switch' | 'cancel' | 'callback'
   targetSlide?: Slide
+  run?: () => unknown | Promise<unknown>
 }
 
 /**
@@ -66,7 +67,8 @@ export function useEditConflict() {
    * @returns true 如果可以直接取消，false 如果需要用户确认
    */
   const tryCancelEdit = useCallback((
-    currentEditSession: EditSession | null
+    currentEditSession: EditSession | null,
+    pendingAction?: PendingEditAction
   ): boolean => {
     // 如果没有当前编辑会话，不需要取消
     if (!currentEditSession) {
@@ -76,7 +78,7 @@ export function useEditConflict() {
     // 检查是否有未保存的编辑
     if (hasUnsavedEdits(currentEditSession)) {
       // 保存待处理的操作
-      setPendingAction({ type: 'cancel' })
+      setPendingAction(pendingAction ?? { type: 'cancel' })
       setShowConfirmDialog(true)
       return false
     }

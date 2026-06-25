@@ -127,7 +127,7 @@ function AppContent() {
   const currentProjectId = state.projectId || activeProjectId
 
   // 自动保存
-  const { saveNow } = useAutoSave({
+  const { saveNow, cancelPendingSaves } = useAutoSave({
     projectId: state.projectId,
     fileContent: state.fileContent,
     fileName: state.fileName,
@@ -199,7 +199,7 @@ function AppContent() {
     !isResetWorkflow(state.workflow)
   ), [slides.length, state.fileContent, state.lastCompletedSlides.length, state.workflow])
 
-  const prepareProjectLifecycleChange = useCallback(async () => {
+  const runProjectLifecycleChange = useCallback(async (action: () => Promise<void> | void) => {
     if (hasCurrentProjectContent()) {
       try {
         await saveNow()
@@ -210,28 +210,35 @@ function AppContent() {
     }
 
     cancelGeneration()
+    await action()
     return true
   }, [cancelGeneration, hasCurrentProjectContent, saveNow])
 
-  const handleOpenProject = useCallback(async (id: string) => {
-    if (!await prepareProjectLifecycleChange()) {
-      return
+  const prepareProjectLifecycleChange = useCallback(async (action: () => Promise<void> | void) => {
+    const resumeAction = () => runProjectLifecycleChange(action)
+
+    if (!tryCancelEdit(editSession, { type: 'callback', run: resumeAction })) {
+      return false
     }
 
-    const project = await openProject(id)
-    restoreProjectRecord(project)
+    return runProjectLifecycleChange(action)
+  }, [editSession, runProjectLifecycleChange, tryCancelEdit])
+
+  const handleOpenProject = useCallback(async (id: string) => {
+    await prepareProjectLifecycleChange(async () => {
+      const project = await openProject(id)
+      restoreProjectRecord(project)
+    })
   }, [openProject, prepareProjectLifecycleChange, restoreProjectRecord])
 
   const handleCreateProject = useCallback(async () => {
-    if (!await prepareProjectLifecycleChange()) {
-      return
-    }
-
-    const project = await createProject({
-      generationConfig: state.generationConfig,
-      workflow: createEmptyWorkflowState()
+    await prepareProjectLifecycleChange(async () => {
+      const project = await createProject({
+        generationConfig: state.generationConfig,
+        workflow: createEmptyWorkflowState()
+      })
+      restoreProjectRecord(project)
     })
-    restoreProjectRecord(project)
   }, [createProject, prepareProjectLifecycleChange, restoreProjectRecord, state.generationConfig])
 
   const handleRenameProject = useCallback(async (id: string, title: string) => {
@@ -239,16 +246,15 @@ function AppContent() {
   }, [renameProject])
 
   const handleDuplicateProject = useCallback(async (id: string) => {
-    if (!await prepareProjectLifecycleChange()) {
-      return
-    }
-
-    const project = await duplicateProject(id)
-    restoreProjectRecord(project)
+    await prepareProjectLifecycleChange(async () => {
+      const project = await duplicateProject(id)
+      restoreProjectRecord(project)
+    })
   }, [duplicateProject, prepareProjectLifecycleChange, restoreProjectRecord])
 
   const handleDeleteProject = useCallback(async (id: string) => {
     if (id === currentProjectId) {
+      await cancelPendingSaves()
       cancelGeneration()
     }
 
@@ -257,13 +263,23 @@ function AppContent() {
       resetState()
       setConfirmedSlidePrompts(null)
     }
-  }, [cancelGeneration, currentProjectId, deleteProject, resetState])
+  }, [cancelGeneration, cancelPendingSaves, currentProjectId, deleteProject, resetState])
 
-  const handleFileSelect = useCallback(async (file: File) => {
+  const uploadSelectedFile = useCallback(async (file: File) => {
     const uploadResult = await uploadDocument(file)
     setFile(file, uploadResult.content, uploadResult.filename || file.name)
     setConfirmedSlidePrompts(null)
   }, [setFile])
+
+  const handleFileSelect = useCallback(async (file: File) => {
+    const resumeAction = () => uploadSelectedFile(file)
+
+    if (!tryCancelEdit(editSession, { type: 'callback', run: resumeAction })) {
+      return
+    }
+
+    await resumeAction()
+  }, [editSession, tryCancelEdit, uploadSelectedFile])
 
   const handleSlideSelect = useCallback((slideId: string) => {
     selectSlide(slideId)
@@ -271,7 +287,7 @@ function AppContent() {
 
   const handleSlideEdit = useCallback((slideId: string) => {
     // 找到要编辑的幻灯片
-    const slide = slides.find(s => s.id === slideId)
+    const slide = visibleSlides.find(s => s.id === slideId)
     if (!slide) return
 
     // 检查是否有未保存的编辑
@@ -281,7 +297,7 @@ function AppContent() {
       beginEdit(slide)
     }
     // 如果返回 false，会显示确认对话框，用户确认后再处理
-  }, [selectSlide, slides, beginEdit, editSession, tryStartEdit])
+  }, [selectSlide, visibleSlides, beginEdit, editSession, tryStartEdit])
 
   const handleApiConfigChange = useCallback((config: FullApiConfig) => {
     setFullApiConfig(config)
@@ -327,6 +343,11 @@ function AppContent() {
     } else if (action.type === 'cancel') {
       // 取消当前编辑
       cancelEdit()
+    } else if (action.type === 'callback' && typeof action.run === 'function') {
+      cancelEdit()
+      void Promise.resolve(action.run()).catch((err) => {
+        console.error('Failed to resume action after discarding edit:', err)
+      })
     }
   }, [confirmDiscard, cancelEdit, selectSlide, beginEdit])
 
@@ -436,7 +457,7 @@ function AppContent() {
           slides={visibleSlides}
           selectedSlideId={state.selectedSlideId}
           onSlideSelect={handleSlideSelect}
-          onSlideEdit={slides.length > 0 ? handleSlideEdit : undefined}
+          onSlideEdit={visibleSlides.length > 0 ? handleSlideEdit : undefined}
           onExport={handleExport}
           isExporting={exportState.isExporting}
           exportProgress={exportState.progress}

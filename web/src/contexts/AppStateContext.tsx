@@ -342,9 +342,15 @@ function appReducer(state: AppState, action: AppAction): AppState {
           : slide
       )
       const hasEditableCompletedDeck = state.status === 'generated' || state.status === 'prompts_ready'
-      const shouldUpdateCompletedSlides = !state.isGenerating &&
-        (hasEditableCompletedDeck || matchesCompletedSlideSnapshot(currentSlide, completedSlide)) &&
-        Boolean(currentSlide && completedSlide)
+      const isFallbackOnlyCompletedSlide = !currentSlide && state.slides.length === 0
+      const shouldUpdateCompletedSlides = Boolean(completedSlide) && (
+        isFallbackOnlyCompletedSlide ||
+        (
+          !state.isGenerating &&
+          Boolean(currentSlide) &&
+          (hasEditableCompletedDeck || matchesCompletedSlideSnapshot(currentSlide, completedSlide))
+        )
+      )
 
       return {
         ...state,

@@ -260,6 +260,186 @@ describe('IndexedDB project store', () => {
     expect(openedProject.lastCompletedSlides[0].imageBase64).toBe(COMPLETED_IMAGE)
   })
 
+  it('does not rewrite hydrated slide assets on a full save when images are unchanged', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    const historyImage = 'aHlkcmF0ZWQtaGlzdG9yeQ=='
+
+    const saved = await saveProjectRecord(buildProjectRecord({
+      id: 'hydrated-resave',
+      slides: [
+        imageSlide({
+          id: 'slide-1',
+          imageBase64: CURRENT_IMAGE,
+          editHistory: [{
+            imageUrl: `data:image/webp;base64,${historyImage}`,
+            imageBase64: historyImage,
+            instruction: 'make it quieter',
+            timestamp: 1234
+          }]
+        })
+      ],
+      lastCompletedSlides: []
+    }))
+    const assetsBeforeHydratedSave = await listStoredAssets('hydrated-resave')
+
+    const hydrated = await hydrateProjectImages(saved)
+    expect(hydrated.slides[0].imageBase64).toBe(CURRENT_IMAGE)
+    expect(hydrated.slides[0].editHistory?.[0].imageBase64).toBe(historyImage)
+
+    nowSpy.mockReturnValue(2000)
+    await saveProjectRecord({
+      ...hydrated,
+      title: 'Hydrated resave'
+    })
+
+    expect(await listStoredAssets('hydrated-resave')).toEqual(assetsBeforeHydratedSave)
+  })
+
+  it('opens a project with missing asset references by omitting unavailable images', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000)
+
+    await saveProjectRecord(buildProjectRecord({
+      id: 'manager-open-missing-assets',
+      title: 'Partial deck',
+      slides: [
+        imageSlide({ id: 'slide-1', imageBase64: CURRENT_IMAGE }),
+        imageSlide({ id: 'slide-2', pageNumber: 2, imageBase64: SECOND_IMAGE })
+      ],
+      lastCompletedSlides: []
+    }))
+    await deleteStoredAsset(currentAssetKey('manager-open-missing-assets', 'slide-2'))
+
+    nowSpy.mockReturnValue(2000)
+
+    const { result } = renderHook(() => useProjectManager())
+    await waitFor(() => {
+      expect(result.current.isLoadingProjects).toBe(false)
+    })
+
+    let openedProject!: ProjectRecord
+    await act(async () => {
+      const opened = await result.current.openProject('manager-open-missing-assets')
+      expect(opened).not.toBeNull()
+      openedProject = opened as ProjectRecord
+    })
+
+    expect(await getActiveProjectId()).toBe('manager-open-missing-assets')
+    expect((await getProject('manager-open-missing-assets'))?.lastOpenedAt).toBe(2000)
+    expect(openedProject.slides[0].imageBase64).toBe(CURRENT_IMAGE)
+    expect(openedProject.slides[1].imageBase64).toBeUndefined()
+    expect(openedProject.slides[1].imageUrl).toBe('')
+  })
+
+  it('strips missing slide and history asset references during partial recovery so later normal saves succeed', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    const historyImage = 'cGFydGlhbC1oaXN0b3J5'
+
+    await saveProjectRecord(buildProjectRecord({
+      id: 'partial-recovery-sanitize',
+      title: 'Partial sanitize deck',
+      slides: [
+        imageSlide({
+          id: 'kept-slide',
+          imageBase64: CURRENT_IMAGE,
+          editHistory: [{
+            imageUrl: `data:image/webp;base64,${historyImage}`,
+            imageBase64: historyImage,
+            instruction: 'remove stale history if asset disappears',
+            timestamp: 1234
+          }]
+        }),
+        imageSlide({ id: 'missing-slide', pageNumber: 2, imageBase64: SECOND_IMAGE })
+      ],
+      lastCompletedSlides: [
+        imageSlide({ id: 'completed-missing', imageBase64: COMPLETED_IMAGE })
+      ]
+    }))
+    await deleteStoredAsset(currentAssetKey('partial-recovery-sanitize', 'missing-slide'))
+    await deleteStoredAsset(completedAssetKey('partial-recovery-sanitize', 'completed-missing'))
+    await deleteStoredAsset(editHistoryAssetKey('partial-recovery-sanitize', 'slides', 'kept-slide'))
+
+    nowSpy.mockReturnValue(2000)
+
+    const { result } = renderHook(() => useProjectManager())
+    await waitFor(() => {
+      expect(result.current.isLoadingProjects).toBe(false)
+    })
+
+    let openedProject!: ProjectRecord
+    await act(async () => {
+      const opened = await result.current.openProject('partial-recovery-sanitize')
+      expect(opened).not.toBeNull()
+      openedProject = opened as ProjectRecord
+    })
+
+    const savedAfterNormalSave = await saveProjectRecord(openedProject)
+    const persistedAfterNormalSave = await readStoredProject('partial-recovery-sanitize')
+
+    expect(savedAfterNormalSave.slides[0]).toMatchObject({
+      imageStorageKey: currentAssetKey('partial-recovery-sanitize', 'kept-slide'),
+      imageAsset: {
+        key: currentAssetKey('partial-recovery-sanitize', 'kept-slide')
+      }
+    })
+    expect(savedAfterNormalSave.slides[0].editHistory?.[0]).toEqual({
+      imageUrl: '',
+      imageBase64: '',
+      instruction: 'remove stale history if asset disappears',
+      timestamp: 1234
+    })
+    expect(savedAfterNormalSave.slides[1].imageStorageKey).toBeUndefined()
+    expect(savedAfterNormalSave.slides[1].imageAsset).toBeUndefined()
+    expect(savedAfterNormalSave.lastCompletedSlides[0].imageStorageKey).toBeUndefined()
+    expect(savedAfterNormalSave.lastCompletedSlides[0].imageAsset).toBeUndefined()
+    expect(persistedAfterNormalSave).toEqual(savedAfterNormalSave)
+  })
+
+  it('prunes stale unreferenced project assets on save without deleting other projects assets', async () => {
+    const historyImage = 'c3RhbGUtaGlzdG9yeQ=='
+
+    await saveProjectRecord(buildProjectRecord({
+      id: 'prune-source',
+      slides: [
+        imageSlide({
+          id: 'keep-slide',
+          imageBase64: CURRENT_IMAGE,
+          editHistory: [{
+            imageUrl: `data:image/webp;base64,${historyImage}`,
+            imageBase64: historyImage,
+            instruction: 'keep this history initially',
+            timestamp: 1234
+          }]
+        }),
+        imageSlide({ id: 'remove-slide', pageNumber: 2, imageBase64: SECOND_IMAGE })
+      ],
+      lastCompletedSlides: [
+        imageSlide({ id: 'completed-slide', imageBase64: COMPLETED_IMAGE })
+      ]
+    }))
+    await saveProjectRecord(buildProjectRecord({
+      id: 'prune-other',
+      slides: [imageSlide({ id: 'other-slide', imageBase64: OTHER_IMAGE })],
+      lastCompletedSlides: []
+    }))
+
+    const compactProject = await getProject('prune-source')
+    await saveProjectRecord({
+      ...(compactProject as ProjectRecord),
+      slides: [{
+        ...(compactProject as ProjectRecord).slides[0],
+        editHistory: []
+      }],
+      lastCompletedSlides: []
+    })
+
+    expect((await listStoredAssets('prune-source')).map(asset => asset.key).sort()).toEqual([
+      currentAssetKey('prune-source', 'keep-slide')
+    ])
+    expect((await listStoredAssets('prune-other')).map(asset => asset.key)).toEqual([
+      currentAssetKey('prune-other', 'other-slide')
+    ])
+  })
+
   it('requests existing compact asset references as one IndexedDB batch while resaving', async () => {
     await saveProjectRecord(buildProjectRecord({
       id: 'batch-asset-refs',

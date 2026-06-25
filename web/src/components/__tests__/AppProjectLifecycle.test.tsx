@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../../App'
-import type { ProjectRecord, ProjectSummary, Slide } from '../../types'
+import type { EditSession, ProjectRecord, ProjectSummary, Slide } from '../../types'
 
 const mocks = vi.hoisted(() => {
   const operations: string[] = []
@@ -84,8 +84,30 @@ const mocks = vi.hoisted(() => {
     rightPanelSnapshots: [] as Array<{ slideIds: string[]; isLoading: boolean; hasEditHandler: boolean }>,
     exportSlideSnapshots: [] as string[][],
     capturedAutoSaveParams: undefined as Record<string, unknown> | undefined,
+    editSession: null as EditSession | null,
+    pendingResumeAction: undefined as (() => void | Promise<void>) | undefined,
+    selectedUploadFile: new File(['# Uploaded Deck'], 'uploaded.md', { type: 'text/markdown' }),
     workflowPanelMounts: 0,
     startExport: vi.fn(),
+    beginEdit: vi.fn(),
+    submitEdit: vi.fn(),
+    revertToVersion: vi.fn(),
+    confirmEdit: vi.fn(),
+    cancelEdit: vi.fn(),
+    tryStartEdit: vi.fn((...args: unknown[]) => {
+      void args
+      return true
+    }),
+    tryCancelEdit: vi.fn((...args: unknown[]) => {
+      void args
+      return true
+    }),
+    confirmDiscard: vi.fn(),
+    cancelDiscard: vi.fn(),
+    uploadDocument: vi.fn(async (file: File) => {
+      operations.push(`upload:${file.name}`)
+      return { content: '# Uploaded Deck', filename: file.name }
+    }),
     saveNow: vi.fn(async () => {
       operations.push('save')
     }),
@@ -105,6 +127,9 @@ const mocks = vi.hoisted(() => {
     duplicateProject: vi.fn(async () => {
       operations.push('duplicate')
       return duplicateProjectRecord
+    }),
+    cancelPendingAutoSave: vi.fn(() => {
+      operations.push('cancel-autosave')
     }),
     deleteProject: vi.fn(async () => {
       operations.push('delete')
@@ -127,7 +152,23 @@ vi.mock('../Layout', () => ({
 }))
 
 vi.mock('../LeftPanel', () => ({
-  default: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>
+  default: ({
+    children,
+    onFileSelect
+  }: {
+    children?: React.ReactNode
+    onFileSelect: (file: File) => void | Promise<void>
+  }) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => void onFileSelect(mocks.selectedUploadFile)}
+      >
+        Upload fixture
+      </button>
+      {children}
+    </div>
+  )
 }))
 
 vi.mock('../CenterPanel', () => ({
@@ -184,29 +225,67 @@ vi.mock('../DesignWorkflowPanel', async () => {
 })
 vi.mock('../GenerateButton', () => ({ default: () => null }))
 vi.mock('../ProgressIndicator', () => ({ default: () => null }))
-vi.mock('../ConfirmDialog', () => ({ default: () => null }))
+vi.mock('../ConfirmDialog', () => ({
+  default: ({
+    isOpen,
+    onConfirm
+  }: {
+    isOpen: boolean
+    onConfirm: () => void
+  }) => isOpen ? <button type="button" onClick={onConfirm}>Discard edit</button> : null
+}))
 vi.mock('../RestoreSessionDialog', () => ({ default: () => null }))
 
 vi.mock('../../hooks/useEdit', () => ({
   useEdit: () => ({
-    editSession: null,
+    editSession: mocks.editSession,
     isEditing: false,
-    beginEdit: vi.fn(),
-    submitEdit: vi.fn(),
-    revertToVersion: vi.fn(),
-    confirmEdit: vi.fn(),
-    cancelEdit: vi.fn()
+    beginEdit: mocks.beginEdit,
+    submitEdit: mocks.submitEdit,
+    revertToVersion: mocks.revertToVersion,
+    confirmEdit: mocks.confirmEdit,
+    cancelEdit: mocks.cancelEdit
   })
 }))
 
-vi.mock('../../hooks/useEditConflict', () => ({
-  useEditConflict: () => ({
-    showConfirmDialog: false,
-    tryStartEdit: vi.fn(() => true),
-    tryCancelEdit: vi.fn(() => true),
-    confirmDiscard: vi.fn(),
-    cancelDiscard: vi.fn()
-  })
+vi.mock('../../hooks/useEditConflict', async () => {
+  const React = await vi.importActual('react') as typeof import('react')
+
+  return {
+    useEditConflict: () => {
+      const [showConfirmDialog, setShowConfirmDialog] = React.useState(false)
+
+      return {
+        showConfirmDialog,
+        tryStartEdit: (...args: unknown[]) => {
+          const canStart = mocks.tryStartEdit(args[0], args[1])
+          if (!canStart) {
+            setShowConfirmDialog(true)
+          }
+          return canStart
+        },
+        tryCancelEdit: (...args: unknown[]) => {
+          const canCancel = mocks.tryCancelEdit(args[0], args[1])
+          if (!canCancel) {
+            setShowConfirmDialog(true)
+          }
+          return canCancel
+        },
+        confirmDiscard: () => {
+          setShowConfirmDialog(false)
+          return mocks.confirmDiscard()
+        },
+        cancelDiscard: () => {
+          setShowConfirmDialog(false)
+          mocks.cancelDiscard()
+        }
+      }
+    }
+  }
+})
+
+vi.mock('../../services/uploadService', () => ({
+  uploadDocument: mocks.uploadDocument
 }))
 
 vi.mock('../../hooks/useExport', () => ({
@@ -246,7 +325,8 @@ vi.mock('../../hooks/useAutoSave', () => ({
     return {
       isSaving: false,
       lastSaved: null,
-      saveNow: mocks.saveNow
+      saveNow: mocks.saveNow,
+      cancelPendingSaves: mocks.cancelPendingAutoSave
     }
   }
 }))
@@ -273,12 +353,19 @@ describe('App project lifecycle safeguards', () => {
     mocks.rightPanelSnapshots.length = 0
     mocks.exportSlideSnapshots.length = 0
     mocks.capturedAutoSaveParams = undefined
+    mocks.editSession = null
+    mocks.pendingResumeAction = undefined
     mocks.workflowPanelMounts = 0
     mocks.projectRecord.fileName = 'saved.md'
     mocks.projectRecord.fileContent = '# Saved'
     mocks.projectRecord.slides = []
     mocks.projectRecord.lastCompletedSlides = []
     mocks.projectRecord.status = 'generated'
+    mocks.confirmDiscard.mockReturnValue(undefined)
+    mocks.uploadDocument.mockImplementation(async (file: File) => {
+      mocks.operations.push(`upload:${file.name}`)
+      return { content: '# Uploaded Deck', filename: file.name }
+    })
     vi.clearAllMocks()
     vi.restoreAllMocks()
   })
@@ -348,6 +435,34 @@ describe('App project lifecycle safeguards', () => {
     expect(mocks.operations.indexOf('cancel')).toBeLessThan(mocks.operations.indexOf('delete'))
   })
 
+  it('cancels pending autosaves before deleting the current project', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '删除 Current Deck' }))
+
+    await waitFor(() => {
+      expect(mocks.deleteProject).toHaveBeenCalledWith('current-project')
+    })
+    expect(mocks.cancelPendingAutoSave).toHaveBeenCalledTimes(1)
+    expect(mocks.operations.indexOf('cancel-autosave')).toBeGreaterThanOrEqual(0)
+    expect(mocks.operations.indexOf('cancel-autosave')).toBeLessThan(mocks.operations.indexOf('delete'))
+  })
+
+  it('does not cancel current autosave when deleting a non-current project', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: '删除 Saved Deck' }))
+
+    await waitFor(() => {
+      expect(mocks.deleteProject).toHaveBeenCalledWith('saved-project')
+    })
+    expect(mocks.cancelPendingAutoSave).not.toHaveBeenCalled()
+  })
+
   it('flushes current autosave, cancels generation, and restores the duplicate project', async () => {
     render(<App />)
 
@@ -409,9 +524,165 @@ describe('App project lifecycle safeguards', () => {
     expect(latestRightPanel).toEqual({
       slideIds: ['previous-completed-slide'],
       isLoading: false,
-      hasEditHandler: false
+      hasEditHandler: true
     })
     expect(mocks.exportSlideSnapshots).toContainEqual(['previous-completed-slide'])
+  })
+
+  it('blocks project open, new, and duplicate when edit discard confirmation is needed', async () => {
+    mocks.editSession = {
+      slideId: 'current-slide',
+      originalImage: 'current',
+      currentImage: 'edited-current',
+      history: [],
+      savedHistoryLength: 0,
+      userInput: ''
+    }
+    mocks.tryCancelEdit.mockReturnValue(false)
+
+    render(<App />)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /打开 Saved Deck/ }))
+      fireEvent.click(screen.getByRole('button', { name: '新建项目' }))
+      fireEvent.click(screen.getByRole('button', { name: '复制 Current Deck' }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(mocks.tryCancelEdit).toHaveBeenCalledWith(
+      mocks.editSession,
+      expect.objectContaining({ type: 'callback', run: expect.any(Function) })
+    )
+    expect(mocks.openProject).not.toHaveBeenCalled()
+    expect(mocks.createProject).not.toHaveBeenCalled()
+    expect(mocks.duplicateProject).not.toHaveBeenCalled()
+    expect(mocks.saveNow).not.toHaveBeenCalled()
+    expect(mocks.cancelGeneration).not.toHaveBeenCalled()
+    expect(mocks.cancelEdit).not.toHaveBeenCalled()
+  })
+
+  it('resumes a blocked project open after confirming edit discard', async () => {
+    mocks.editSession = {
+      slideId: 'current-slide',
+      originalImage: 'current',
+      currentImage: 'edited-current',
+      history: [],
+      savedHistoryLength: 0,
+      userInput: ''
+    }
+    mocks.tryCancelEdit.mockImplementationOnce((...args) => {
+      const pendingAction = args[1]
+      mocks.pendingResumeAction = (pendingAction as { run?: () => Promise<void> }).run
+      return false
+    })
+    mocks.confirmDiscard.mockImplementationOnce(() => mocks.pendingResumeAction
+      ? { type: 'callback', run: mocks.pendingResumeAction }
+      : undefined
+    )
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: /打开 Saved Deck/ }))
+
+    expect(mocks.openProject).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard edit' }))
+
+    await waitFor(() => {
+      expect(mocks.openProject).toHaveBeenCalledWith('saved-project')
+    })
+    expect(mocks.cancelEdit).toHaveBeenCalledTimes(1)
+    expect(mocks.operations).toContain('open')
+  })
+
+  it('resumes a blocked new project action after confirming edit discard', async () => {
+    mocks.editSession = {
+      slideId: 'current-slide',
+      originalImage: 'current',
+      currentImage: 'edited-current',
+      history: [],
+      savedHistoryLength: 0,
+      userInput: ''
+    }
+    mocks.tryCancelEdit.mockImplementationOnce((...args) => {
+      const pendingAction = args[1]
+      mocks.pendingResumeAction = (pendingAction as { run?: () => Promise<void> }).run
+      return false
+    })
+    mocks.confirmDiscard.mockImplementationOnce(() => mocks.pendingResumeAction
+      ? { type: 'callback', run: mocks.pendingResumeAction }
+      : undefined
+    )
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '新建项目' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard edit' }))
+
+    await waitFor(() => {
+      expect(mocks.createProject).toHaveBeenCalled()
+    })
+    expect(mocks.cancelEdit).toHaveBeenCalledTimes(1)
+    expect(mocks.operations).toContain('create')
+  })
+
+  it('resumes a blocked duplicate project action after confirming edit discard', async () => {
+    mocks.editSession = {
+      slideId: 'current-slide',
+      originalImage: 'current',
+      currentImage: 'edited-current',
+      history: [],
+      savedHistoryLength: 0,
+      userInput: ''
+    }
+    mocks.tryCancelEdit.mockImplementationOnce((...args) => {
+      const pendingAction = args[1]
+      mocks.pendingResumeAction = (pendingAction as { run?: () => Promise<void> }).run
+      return false
+    })
+    mocks.confirmDiscard.mockImplementationOnce(() => mocks.pendingResumeAction
+      ? { type: 'callback', run: mocks.pendingResumeAction }
+      : undefined
+    )
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: '复制 Current Deck' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard edit' }))
+
+    await waitFor(() => {
+      expect(mocks.duplicateProject).toHaveBeenCalledWith('current-project')
+    })
+    expect(mocks.cancelEdit).toHaveBeenCalledTimes(1)
+    expect(mocks.operations).toContain('duplicate')
+  })
+
+  it('resumes a blocked file upload with the original selected file after confirming edit discard', async () => {
+    mocks.editSession = {
+      slideId: 'current-slide',
+      originalImage: 'current',
+      currentImage: 'edited-current',
+      history: [],
+      savedHistoryLength: 0,
+      userInput: ''
+    }
+    mocks.tryCancelEdit.mockImplementationOnce((...args) => {
+      const pendingAction = args[1]
+      mocks.pendingResumeAction = (pendingAction as { run?: () => Promise<void> }).run
+      return false
+    })
+    mocks.confirmDiscard.mockImplementationOnce(() => mocks.pendingResumeAction
+      ? { type: 'callback', run: mocks.pendingResumeAction }
+      : undefined
+    )
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Upload fixture' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Discard edit' }))
+
+    await waitFor(() => {
+      expect(mocks.uploadDocument).toHaveBeenCalledWith(mocks.selectedUploadFile)
+    })
+    expect(mocks.cancelEdit).toHaveBeenCalledTimes(1)
+    expect(mocks.operations).toContain('upload:uploaded.md')
   })
 
   it('does not create a new project when the current autosave flush fails', async () => {

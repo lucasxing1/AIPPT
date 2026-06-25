@@ -585,7 +585,7 @@ describe('State Persistence Property Tests', () => {
     expect(restored.lastCompletedSlides.map((slide) => slide.id)).toEqual(['completed-slide'])
   })
 
-  it('reports missing durable image assets when restoring the active project', async () => {
+  it('strips missing durable image asset refs when restoring the active project', async () => {
     const activeProject = await saveProjectRecord(buildProjectRecord({
       id: 'durable-missing-image',
       slides: [buildSlide({
@@ -608,7 +608,13 @@ describe('State Persistence Property Tests', () => {
     })
 
     const restored = onRestore.mock.calls.at(-1)?.[0] as RestoredProject & { missingAssetKeys?: string[] }
-    expect(restored.missingAssetKeys).toEqual([missingKey])
+    expect(restored.missingAssetKeys).toEqual([])
+    expect(restored.slides[0]).toMatchObject({
+      id: 'missing-image-slide',
+      imageUrl: ''
+    })
+    expect(restored.slides[0].imageStorageKey).toBeUndefined()
+    expect(restored.slides[0].imageAsset).toBeUndefined()
   })
 
   it('returns an empty missing asset list from the legacy saved project helper', () => {
@@ -619,7 +625,7 @@ describe('State Persistence Property Tests', () => {
     expect(restored?.missingAssetKeys).toEqual([])
   })
 
-  it('restores legacy compact slides when the old image record is missing', async () => {
+  it('restores legacy compact slides with missing old image refs stripped', async () => {
     const missingLegacyKey = 'legacy-missing.md:legacy-missing-slide'
     const slide: Slide = {
       id: 'legacy-missing-slide',
@@ -655,10 +661,11 @@ describe('State Persistence Property Tests', () => {
       id: 'legacy-missing-slide',
       pageNumber: 1,
       imageUrl: '',
-      imageStorageKey: missingLegacyKey,
       prompt: 'Legacy prompt with a missing image'
     })
-    expect(restored.missingAssetKeys).toEqual([missingLegacyKey])
+    expect(restored.slides[0].imageStorageKey).toBeUndefined()
+    expect(restored.slides[0].imageAsset).toBeUndefined()
+    expect(restored.missingAssetKeys).toEqual([])
   })
 
   it('migrates legacy fallback images from the old slide image database', async () => {

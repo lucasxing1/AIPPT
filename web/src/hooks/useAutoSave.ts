@@ -40,9 +40,12 @@ interface UseAutoSaveReturn {
   isSaving: boolean
   lastSaved: Date | null
   saveNow: () => Promise<void>
+  cancelPendingSaves: () => Promise<void>
 }
 
-type AutoSaveSnapshot = Required<UseAutoSaveParams>
+type AutoSaveSnapshot = Required<UseAutoSaveParams> & {
+  saveGeneration: number
+}
 
 function isResetWorkflow(workflow: WorkflowState): boolean {
   return workflow.status === 'idle' &&
@@ -91,6 +94,17 @@ export function useAutoSave({
   const lastSavedRef = useRef<Date | null>(null)
   const lifecycleFlushInFlightRef = useRef(false)
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve())
+  const lifecycleProjectIdRef = useRef<string | null>(projectId)
+  const saveGenerationRef = useRef(0)
+  const cancelledSaveGenerationsRef = useRef<Set<number>>(new Set())
+  const backgroundSavesCancelledRef = useRef(false)
+
+  if (projectId !== lifecycleProjectIdRef.current) {
+    lifecycleProjectIdRef.current = projectId
+    backgroundSavesCancelledRef.current = false
+    saveGenerationRef.current += 1
+  }
+
   const latestSnapshotRef = useRef<AutoSaveSnapshot>({
     projectId,
     fileContent,
@@ -103,7 +117,8 @@ export function useAutoSave({
     generationRunId,
     onProjectIdChange: onProjectIdChange ?? (() => undefined),
     onSaved: onSaved ?? (() => undefined),
-    enabled
+    enabled,
+    saveGeneration: saveGenerationRef.current
   })
 
   latestSnapshotRef.current = {
@@ -118,7 +133,8 @@ export function useAutoSave({
     generationRunId,
     onProjectIdChange: onProjectIdChange ?? (() => undefined),
     onSaved: onSaved ?? (() => undefined),
-    enabled
+    enabled,
+    saveGeneration: saveGenerationRef.current
   }
 
   const clearPendingTimer = useCallback((): boolean => {
@@ -131,10 +147,38 @@ export function useAutoSave({
     return true
   }, [])
 
+  const isSnapshotCancelled = useCallback((snapshot: AutoSaveSnapshot): boolean => (
+    cancelledSaveGenerationsRef.current.has(snapshot.saveGeneration) ||
+    (
+      backgroundSavesCancelledRef.current &&
+      snapshot.saveGeneration === saveGenerationRef.current
+    )
+  ), [])
+
+  const cancelPendingSaves = useCallback(async () => {
+    const shouldQuarantineNextGeneration = latestSnapshotRef.current.projectId !== null
+    clearPendingTimer()
+    cancelledSaveGenerationsRef.current.add(saveGenerationRef.current)
+    backgroundSavesCancelledRef.current = shouldQuarantineNextGeneration
+    saveGenerationRef.current += 1
+    if (shouldQuarantineNextGeneration) {
+      cancelledSaveGenerationsRef.current.add(saveGenerationRef.current)
+    }
+    latestSnapshotRef.current = {
+      ...latestSnapshotRef.current,
+      saveGeneration: saveGenerationRef.current
+    }
+    await saveQueueRef.current.catch(() => undefined)
+  }, [clearPendingTimer])
+
   /**
    * 执行保存操作
    */
   const performSave = useCallback(async (snapshot = latestSnapshotRef.current) => {
+    if (isSnapshotCancelled(snapshot)) {
+      return
+    }
+
     // 只有当有内容时才保存
     if (!hasPersistableContent(snapshot)) {
       return
@@ -146,6 +190,10 @@ export function useAutoSave({
       const now = Date.now()
       const id = snapshot.projectId || createProjectId()
       const existingProject = snapshot.projectId ? await getProject(snapshot.projectId) : null
+      if (isSnapshotCancelled(snapshot)) {
+        return
+      }
+
       const project: ProjectRecord = {
         version: 2,
         id,
@@ -163,8 +211,17 @@ export function useAutoSave({
         lastOpenedAt: now
       }
 
+      if (isSnapshotCancelled(snapshot)) {
+        return
+      }
       const savedProject = await saveProjectRecord(project)
+      if (isSnapshotCancelled(snapshot)) {
+        return
+      }
       await setActiveProjectId(savedProject.id)
+      if (isSnapshotCancelled(snapshot)) {
+        return
+      }
       if (!snapshot.projectId) {
         snapshot.onProjectIdChange(savedProject.id)
       }
@@ -173,7 +230,7 @@ export function useAutoSave({
     } finally {
       isSavingRef.current = false
     }
-  }, [])
+  }, [isSnapshotCancelled])
 
   const enqueueSave = useCallback((snapshot = latestSnapshotRef.current) => {
     const saveTask = saveQueueRef.current.then(() => performSave(snapshot))
@@ -290,7 +347,8 @@ export function useAutoSave({
   return {
     isSaving: isSavingRef.current,
     lastSaved: lastSavedRef.current,
-    saveNow
+    saveNow,
+    cancelPendingSaves
   }
 }
 

@@ -1,9 +1,10 @@
-import { render, waitFor } from '@testing-library/react'
+import { act, render, waitFor } from '@testing-library/react'
 import 'fake-indexeddb/auto'
 import { useEffect } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAutoSave } from '../../hooks/useAutoSave'
 import {
+  deleteProject,
   getActiveProjectId,
   getProject,
   hydrateProjectImages,
@@ -17,7 +18,7 @@ import {
   resetProjectStoreForTests,
   TEST_GENERATION_CONFIG
 } from '../../services/projectStore.test-utils'
-import type { ProjectStatus, Slide, WorkflowState } from '../../types'
+import type { ProjectRecord, ProjectStatus, Slide, WorkflowState } from '../../types'
 
 interface AutoSaveProbeProps {
   projectId: string | null
@@ -32,6 +33,7 @@ interface AutoSaveProbeProps {
   onProjectIdChange?: (projectId: string) => void
   onProjectSaved?: (projectId: string) => void
   onSaveReady?: (saveNow: () => Promise<void>) => void
+  onCancelReady?: (cancelPendingSaves: () => void) => void
   onSaved?: () => void
   autoSaveNow?: boolean
 }
@@ -49,10 +51,11 @@ function AutoSaveProbe({
   onProjectIdChange,
   onProjectSaved,
   onSaveReady,
+  onCancelReady,
   onSaved,
   autoSaveNow = true
 }: AutoSaveProbeProps) {
-  const { saveNow } = useAutoSave({
+  const autoSave = useAutoSave({
     projectId,
     fileContent,
     fileName,
@@ -66,10 +69,18 @@ function AutoSaveProbe({
     onSaved: onProjectSaved,
     enabled
   })
+  const { saveNow } = autoSave
+  const cancelPendingSaves = (autoSave as { cancelPendingSaves?: () => void }).cancelPendingSaves
 
   useEffect(() => {
     onSaveReady?.(saveNow)
   }, [onSaveReady, saveNow])
+
+  useEffect(() => {
+    if (cancelPendingSaves) {
+      onCancelReady?.(cancelPendingSaves)
+    }
+  }, [cancelPendingSaves, onCancelReady])
 
   useEffect(() => {
     if (!autoSaveNow) {
@@ -439,5 +450,254 @@ describe('AutoSave durable persistence', () => {
     })
 
     expect(await getActiveProjectId()).toBe('active-autosave')
+  })
+
+  it('cancels a pending debounced save while a normal explicit save remains usable', async () => {
+    vi.useFakeTimers()
+    let cancelPendingSaves: (() => void) | undefined
+
+    const cancelledView = render(
+      <AutoSaveProbe
+        projectId="debounced-cancelled"
+        fileContent="# Deleted"
+        enabled={false}
+        autoSaveNow={false}
+        onCancelReady={(cancel) => {
+          cancelPendingSaves = cancel
+        }}
+      />
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    if (!cancelPendingSaves) {
+      cancelledView.unmount()
+      vi.useRealTimers()
+    }
+    expect(cancelPendingSaves).toBeDefined()
+
+    cancelledView.rerender(
+      <AutoSaveProbe
+        projectId="debounced-cancelled"
+        fileContent="# Deleted"
+        enabled
+        autoSaveNow={false}
+        onCancelReady={(cancel) => {
+          cancelPendingSaves = cancel
+        }}
+      />
+    )
+    cancelPendingSaves!()
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000)
+    })
+
+    vi.useRealTimers()
+    expect(await getProject('debounced-cancelled')).toBeNull()
+
+    let saveNow: (() => Promise<void>) | undefined
+    render(
+      <AutoSaveProbe
+        projectId="normal-explicit-save"
+        fileContent="# Normal"
+        autoSaveNow={false}
+        onSaveReady={(save) => {
+          saveNow = save
+        }}
+      />
+    )
+
+    await waitFor(() => {
+      expect(saveNow).toBeDefined()
+    })
+    await saveNow!()
+
+    expect(await getProject('normal-explicit-save')).toMatchObject({
+      fileContent: '# Normal'
+    })
+  })
+
+  it('allows future debounced saves after cancellation while already reset without a project id', async () => {
+    let cancelPendingSaves: (() => void) | undefined
+    const onProjectIdChange = vi.fn()
+    const onProjectSaved = vi.fn()
+
+    const { rerender } = render(
+      <AutoSaveProbe
+        projectId={null}
+        fileContent=""
+        enabled={false}
+        autoSaveNow={false}
+        onProjectIdChange={onProjectIdChange}
+        onProjectSaved={onProjectSaved}
+        onCancelReady={(cancel) => {
+          cancelPendingSaves = cancel
+        }}
+      />
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(cancelPendingSaves).toBeDefined()
+
+    cancelPendingSaves!()
+
+    rerender(
+      <AutoSaveProbe
+        projectId={null}
+        fileContent="# Reused"
+        fileName="reused.md"
+        enabled
+        autoSaveNow={false}
+        onProjectIdChange={onProjectIdChange}
+        onProjectSaved={onProjectSaved}
+        onCancelReady={(cancel) => {
+          cancelPendingSaves = cancel
+        }}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onProjectSaved).toHaveBeenCalledTimes(1)
+    }, { timeout: 2000 })
+    const savedProjectId = onProjectSaved.mock.calls[0][0]
+    expect(onProjectIdChange).toHaveBeenCalledWith(savedProjectId)
+    expect(await getProject(savedProjectId)).toMatchObject({
+      fileContent: '# Reused',
+      fileName: 'reused.md'
+    })
+  })
+
+  it('ignores a queued pagehide background snapshot after cancellation', async () => {
+    let cancelPendingSaves: (() => void) | undefined
+
+    const cancelledView = render(
+      <AutoSaveProbe
+        projectId="queued-cancelled"
+        fileContent="# Queued"
+        enabled={false}
+        autoSaveNow={false}
+        onCancelReady={(cancel) => {
+          cancelPendingSaves = cancel
+        }}
+      />
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    if (!cancelPendingSaves) {
+      cancelledView.unmount()
+    }
+    expect(cancelPendingSaves).toBeDefined()
+
+    cancelledView.rerender(
+      <AutoSaveProbe
+        projectId="queued-cancelled"
+        fileContent="# Queued"
+        enabled
+        autoSaveNow={false}
+        onCancelReady={(cancel) => {
+          cancelPendingSaves = cancel
+        }}
+      />
+    )
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+    cancelPendingSaves!()
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(await getProject('queued-cancelled')).toBeNull()
+  })
+
+  it('ignores an already-started background save after cancellation', async () => {
+    const projectId = 'inflight-cancelled'
+    const existingProject = buildProjectRecord({
+      id: projectId,
+      fileName: 'inflight.md',
+      fileContent: '# Before delete'
+    })
+    await saveProjectRecord(existingProject)
+
+    let cancelPendingSaves: (() => void) | undefined
+    const onProjectSaved = vi.fn()
+    let releaseProjectRead: (() => void) | undefined
+    const projectReadStarted = new Promise<void>((resolve) => {
+      const originalGet = IDBObjectStore.prototype.get
+      let delayedProjectRead = false
+
+      vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementation(function (
+        this: IDBObjectStore,
+        query: IDBValidKey | IDBKeyRange
+      ) {
+        if (delayedProjectRead || this.name !== 'projects' || query !== projectId) {
+          return originalGet.call(this, query)
+        }
+        delayedProjectRead = true
+
+        const request = {
+          result: existingProject,
+          error: null,
+          onsuccess: null,
+          onerror: null
+        } as IDBRequest<ProjectRecord | undefined>
+
+        releaseProjectRead = () => {
+          request.onsuccess?.(new Event('success'))
+        }
+        resolve()
+        return request
+      })
+    })
+
+    const { rerender } = render(
+      <AutoSaveProbe
+        projectId={projectId}
+        fileContent="# After delete"
+        enabled={false}
+        autoSaveNow={false}
+        onProjectSaved={onProjectSaved}
+        onCancelReady={(cancel) => {
+          cancelPendingSaves = cancel
+        }}
+      />
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(cancelPendingSaves).toBeDefined()
+
+    rerender(
+      <AutoSaveProbe
+        projectId={projectId}
+        fileContent="# After delete"
+        enabled
+        autoSaveNow={false}
+        onProjectSaved={onProjectSaved}
+        onCancelReady={(cancel) => {
+          cancelPendingSaves = cancel
+        }}
+      />
+    )
+    window.dispatchEvent(new PageTransitionEvent('pagehide'))
+
+    await projectReadStarted
+    cancelPendingSaves!()
+    await deleteProject(projectId)
+
+    releaseProjectRead!()
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(await getProject(projectId)).toBeNull()
+    expect(onProjectSaved).not.toHaveBeenCalled()
+    expect(await getActiveProjectId()).not.toBe(projectId)
   })
 })

@@ -248,8 +248,8 @@ function AppContent() {
   }, [duplicateProject, prepareProjectLifecycleChange, restoreProjectRecord])
 
   const handleDeleteProject = useCallback(async (id: string) => {
-    if (id === currentProjectId && !await prepareProjectLifecycleChange()) {
-      return
+    if (id === currentProjectId) {
+      cancelGeneration()
     }
 
     await deleteProject(id)
@@ -257,7 +257,7 @@ function AppContent() {
       resetState()
       setConfirmedSlidePrompts(null)
     }
-  }, [currentProjectId, deleteProject, prepareProjectLifecycleChange, resetState])
+  }, [cancelGeneration, currentProjectId, deleteProject, resetState])
 
   const handleFileSelect = useCallback(async (file: File) => {
     const uploadResult = await uploadDocument(file)
@@ -397,7 +397,6 @@ function AppContent() {
           />
 
           <DesignWorkflowPanel
-            key={currentProjectId || 'draft-project'}
             fileContent={state.fileContent}
             fullApiConfig={state.fullApiConfig}
             generationConfig={state.generationConfig}

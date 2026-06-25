@@ -56,16 +56,15 @@ export function useProjectManager() {
       return null
     }
 
-    const hydratedProject = await hydrateProjectImages(project)
     const openedProject: ProjectRecord = {
-      ...hydratedProject,
+      ...project,
       lastOpenedAt: Date.now()
     }
 
-    await saveProjectRecord(openedProject)
+    const savedProject = await saveProjectRecord(openedProject)
     await setActiveProjectId(id)
     await refreshProjects()
-    return openedProject
+    return hydrateProjectImages(savedProject)
   }, [refreshProjects])
 
   const createProject = useCallback(async (input: CreateProjectInput): Promise<ProjectRecord> => {

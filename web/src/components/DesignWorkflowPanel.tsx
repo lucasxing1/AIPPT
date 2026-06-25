@@ -55,6 +55,7 @@ function DesignWorkflowPanel({
   const { t } = useUiPreferences()
   const [isOpen, setIsOpen] = useState(true)
   const previousResetKeyRef = useRef<string | null>(null)
+  const previousWorkflowRef = useRef<WorkflowState | null>(null)
   const previousWorkflowWasResetRef = useRef<boolean | null>(null)
   const isMountedRef = useRef(true)
   const latestWorkflowRef = useRef(workflow)
@@ -125,22 +126,26 @@ function DesignWorkflowPanel({
 
     if (previousResetKeyRef.current === null) {
       previousResetKeyRef.current = resetKey
+      previousWorkflowRef.current = workflow
       latestResetKeyRef.current = resetKey
       previousWorkflowWasResetRef.current = workflowIsReset
       return
     }
 
     if (previousResetKeyRef.current === resetKey) {
+      previousWorkflowRef.current = workflow
       previousWorkflowWasResetRef.current = workflowIsReset
       return
     }
 
     const wasHydratingWorkflow = previousWorkflowWasResetRef.current === true && !workflowIsReset
+    const isSwitchingToRestoredWorkflow = previousWorkflowRef.current !== workflow && !workflowIsReset
     previousResetKeyRef.current = resetKey
+    previousWorkflowRef.current = workflow
     latestResetKeyRef.current = resetKey
     previousWorkflowWasResetRef.current = workflowIsReset
 
-    if (wasHydratingWorkflow) {
+    if (wasHydratingWorkflow || isSwitchingToRestoredWorkflow) {
       return
     }
 

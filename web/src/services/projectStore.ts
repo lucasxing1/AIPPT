@@ -476,18 +476,18 @@ async function loadReferencedAssets(
   assetByKey: Map<string, ProjectAssetRecord>,
   allowMissingAssets: boolean
 ): Promise<void> {
-  for (const key of collectAssetKeys(project)) {
-    if (!assetByKey.has(key)) {
-      const asset = await requestToPromise<ProjectAssetRecord | undefined>(assetStore.get(key))
-      if (!asset) {
-        if (allowMissingAssets) {
-          continue
-        }
-        throw new Error(`Missing image asset: ${key}`)
+  const missingKeys = collectAssetKeys(project).filter(key => !assetByKey.has(key))
+
+  await Promise.all(missingKeys.map(async (key) => {
+    const asset = await requestToPromise<ProjectAssetRecord | undefined>(assetStore.get(key))
+    if (!asset) {
+      if (allowMissingAssets) {
+        return
       }
-      assetByKey.set(key, asset)
+      throw new Error(`Missing image asset: ${key}`)
     }
-  }
+    assetByKey.set(key, asset)
+  }))
 }
 
 function abortTransaction(transaction: IDBTransaction): void {

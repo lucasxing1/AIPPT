@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from '../../App'
 import type { ProjectRecord, ProjectSummary, Slide } from '../../types'
@@ -84,6 +84,7 @@ const mocks = vi.hoisted(() => {
     rightPanelSnapshots: [] as Array<{ slideIds: string[]; isLoading: boolean; hasEditHandler: boolean }>,
     exportSlideSnapshots: [] as string[][],
     capturedAutoSaveParams: undefined as Record<string, unknown> | undefined,
+    workflowPanelMounts: 0,
     startExport: vi.fn(),
     saveNow: vi.fn(async () => {
       operations.push('save')
@@ -154,14 +155,33 @@ vi.mock('../RightPanel', () => ({
 }))
 vi.mock('../ApiConfigForm', () => ({ default: () => null }))
 vi.mock('../GenerationConfigForm', () => ({ default: () => null }))
-vi.mock('../DesignWorkflowPanel', () => ({
-  default: ({ children, fileContent }: { children?: React.ReactNode; fileContent: string }) => (
-    <div>
-      <div data-testid="workflow-file-content">{fileContent}</div>
-      {children}
-    </div>
-  )
-}))
+vi.mock('../DesignWorkflowPanel', async () => {
+  const React = await vi.importActual('react') as typeof import('react')
+
+  function MockDesignWorkflowPanel({ children, fileContent }: { children?: React.ReactNode; fileContent: string }) {
+    const [localDraft, setLocalDraft] = React.useState('')
+
+    React.useEffect(() => {
+      mocks.workflowPanelMounts += 1
+    }, [])
+
+    return (
+      <div>
+        <div data-testid="workflow-file-content">{fileContent}</div>
+        <input
+          aria-label="workflow local draft"
+          value={localDraft}
+          onChange={(event) => setLocalDraft(event.currentTarget.value)}
+        />
+        {children}
+      </div>
+    )
+  }
+
+  return {
+    default: MockDesignWorkflowPanel
+  }
+})
 vi.mock('../GenerateButton', () => ({ default: () => null }))
 vi.mock('../ProgressIndicator', () => ({ default: () => null }))
 vi.mock('../ConfirmDialog', () => ({ default: () => null }))
@@ -253,6 +273,7 @@ describe('App project lifecycle safeguards', () => {
     mocks.rightPanelSnapshots.length = 0
     mocks.exportSlideSnapshots.length = 0
     mocks.capturedAutoSaveParams = undefined
+    mocks.workflowPanelMounts = 0
     mocks.projectRecord.fileName = 'saved.md'
     mocks.projectRecord.fileContent = '# Saved'
     mocks.projectRecord.slides = []
@@ -276,6 +297,28 @@ describe('App project lifecycle safeguards', () => {
     expect(mocks.operations.indexOf('cancel')).toBeLessThan(mocks.operations.indexOf('open'))
   })
 
+  it('keeps the workflow panel mounted when autosave assigns a durable project id', async () => {
+    render(<App />)
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'workflow local draft' }), {
+      target: { value: 'keep this local draft' }
+    })
+
+    expect(mocks.workflowPanelMounts).toBe(1)
+    expect(typeof mocks.capturedAutoSaveParams?.onProjectIdChange).toBe('function')
+
+    await act(async () => {
+      const onProjectIdChange = mocks.capturedAutoSaveParams?.onProjectIdChange as (projectId: string) => void
+      onProjectIdChange('autosaved-project')
+    })
+
+    await waitFor(() => {
+      expect(mocks.capturedAutoSaveParams?.projectId).toBe('autosaved-project')
+    })
+    expect(mocks.workflowPanelMounts).toBe(1)
+    expect(screen.getByRole('textbox', { name: 'workflow local draft' })).toHaveValue('keep this local draft')
+  })
+
   it('flushes current autosave and cancels generation before creating a new project', async () => {
     render(<App />)
 
@@ -290,7 +333,7 @@ describe('App project lifecycle safeguards', () => {
     expect(mocks.operations.indexOf('cancel')).toBeLessThan(mocks.operations.indexOf('create'))
   })
 
-  it('flushes current autosave and cancels generation before deleting the current project', async () => {
+  it('cancels generation without flushing autosave before deleting the current project', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
 
     render(<App />)
@@ -300,9 +343,8 @@ describe('App project lifecycle safeguards', () => {
     await waitFor(() => {
       expect(mocks.deleteProject).toHaveBeenCalledWith('current-project')
     })
-    expect(mocks.operations.indexOf('save')).toBeGreaterThanOrEqual(0)
+    expect(mocks.saveNow).not.toHaveBeenCalled()
     expect(mocks.operations.indexOf('cancel')).toBeGreaterThanOrEqual(0)
-    expect(mocks.operations.indexOf('save')).toBeLessThan(mocks.operations.indexOf('delete'))
     expect(mocks.operations.indexOf('cancel')).toBeLessThan(mocks.operations.indexOf('delete'))
   })
 
@@ -387,7 +429,7 @@ describe('App project lifecycle safeguards', () => {
     expect(mocks.cancelGeneration).not.toHaveBeenCalled()
   })
 
-  it('does not delete the current project when the current autosave flush fails', async () => {
+  it('deletes the current project even when an autosave flush would fail', async () => {
     const error = new Error('save failed')
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     vi.spyOn(window, 'confirm').mockReturnValue(true)
@@ -397,10 +439,11 @@ describe('App project lifecycle safeguards', () => {
     fireEvent.click(screen.getByRole('button', { name: '删除 Current Deck' }))
 
     await waitFor(() => {
-      expect(consoleError).toHaveBeenCalledWith('Failed to save current project before switching:', error)
+      expect(mocks.deleteProject).toHaveBeenCalledWith('current-project')
     })
-    expect(mocks.deleteProject).not.toHaveBeenCalled()
-    expect(mocks.cancelGeneration).not.toHaveBeenCalled()
+    expect(mocks.saveNow).not.toHaveBeenCalled()
+    expect(consoleError).not.toHaveBeenCalledWith('Failed to save current project before switching:', error)
+    expect(mocks.cancelGeneration).toHaveBeenCalled()
   })
 
   it('refreshes project summaries after autosave reports a durable save', () => {

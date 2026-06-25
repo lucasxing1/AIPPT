@@ -227,6 +227,76 @@ describe('IndexedDB project store', () => {
     })
   })
 
+  it('opens a compact project without rewriting existing slide asset records', async () => {
+    const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000)
+
+    await saveProjectRecord(buildProjectRecord({
+      id: 'manager-open-compact',
+      title: 'Compact deck',
+      slides: [imageSlide({ id: 'slide-1', imageBase64: CURRENT_IMAGE })],
+      lastCompletedSlides: [imageSlide({ id: 'slide-1', imageBase64: COMPLETED_IMAGE })]
+    }))
+    const assetsBeforeOpen = await listStoredAssets('manager-open-compact')
+
+    nowSpy.mockReturnValue(2000)
+
+    const { result } = renderHook(() => useProjectManager())
+    await waitFor(() => {
+      expect(result.current.isLoadingProjects).toBe(false)
+    })
+
+    let openedProject!: ProjectRecord
+    await act(async () => {
+      const opened = await result.current.openProject('manager-open-compact')
+      expect(opened).not.toBeNull()
+      openedProject = opened as ProjectRecord
+    })
+
+    const assetsAfterOpen = await listStoredAssets('manager-open-compact')
+    expect(assetsAfterOpen).toEqual(assetsBeforeOpen)
+    expect(await getActiveProjectId()).toBe('manager-open-compact')
+    expect((await getProject('manager-open-compact'))?.lastOpenedAt).toBe(2000)
+    expect(openedProject.slides[0].imageBase64).toBe(CURRENT_IMAGE)
+    expect(openedProject.lastCompletedSlides[0].imageBase64).toBe(COMPLETED_IMAGE)
+  })
+
+  it('requests existing compact asset references as one IndexedDB batch while resaving', async () => {
+    await saveProjectRecord(buildProjectRecord({
+      id: 'batch-asset-refs',
+      title: 'Batch deck',
+      slides: [imageSlide({ id: 'slide-1', imageBase64: CURRENT_IMAGE })],
+      lastCompletedSlides: [imageSlide({ id: 'slide-1', imageBase64: COMPLETED_IMAGE })]
+    }))
+    const compactProject = await getProject('batch-asset-refs')
+    const originalGet = IDBObjectStore.prototype.get
+    let assetGetCalls = 0
+    const getCallsBeforeEachSuccess: number[] = []
+    const getSpy = vi.spyOn(IDBObjectStore.prototype, 'get').mockImplementation(function (
+      this: IDBObjectStore,
+      key: IDBValidKey | IDBKeyRange
+    ) {
+      const request = originalGet.call(this, key)
+
+      if (this.name === 'assets') {
+        assetGetCalls += 1
+        request.addEventListener('success', () => {
+          getCallsBeforeEachSuccess.push(assetGetCalls)
+        }, { once: true })
+      }
+
+      return request
+    })
+
+    await saveProjectRecord({
+      ...(compactProject as ProjectRecord),
+      title: 'Resaved compact deck'
+    })
+    getSpy.mockRestore()
+
+    expect(assetGetCalls).toBeGreaterThanOrEqual(2)
+    expect(getCallsBeforeEachSuccess[0]).toBe(assetGetCalls)
+  })
+
   it('reports missing image assets instead of silently claiming full recovery', async () => {
     const project = buildProjectRecord({
       id: 'missing-assets',

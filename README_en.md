@@ -163,6 +163,7 @@ output/ppt_20241201_123456/
 
 ## 📋 TODO
 
+- [ ] Make generated PPT images editable
 - [ ] Support region selection for partial slide editing
 - [ ] Add more provider profile templates
 

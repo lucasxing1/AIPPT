@@ -323,11 +323,51 @@ describe('IndexedDB project store', () => {
       openedProject = opened as ProjectRecord
     })
 
+    expect((openedProject as ProjectRecord & { missingAssetKeys?: string[] }).missingAssetKeys).toEqual([
+      currentAssetKey('manager-open-missing-assets', 'slide-2')
+    ])
     expect(await getActiveProjectId()).toBe('manager-open-missing-assets')
     expect((await getProject('manager-open-missing-assets'))?.lastOpenedAt).toBe(2000)
     expect(openedProject.slides[0].imageBase64).toBe(CURRENT_IMAGE)
     expect(openedProject.slides[1].imageBase64).toBeUndefined()
     expect(openedProject.slides[1].imageUrl).toBe('')
+  })
+
+  it('does not treat a post-delete project list refresh failure as a storage delete failure', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    await saveProjectRecord(buildProjectRecord({
+      id: 'delete-refresh-failure',
+      title: 'Delete refresh failure'
+    }))
+    await setActiveProjectId('delete-refresh-failure')
+
+    const { result } = renderHook(() => useProjectManager())
+    await waitFor(() => {
+      expect(result.current.isLoadingProjects).toBe(false)
+    })
+
+    const originalGetAll = IDBObjectStore.prototype.getAll
+    vi.spyOn(IDBObjectStore.prototype, 'getAll').mockImplementation(function (
+      this: IDBObjectStore,
+      query?: IDBValidKey | IDBKeyRange | null,
+      count?: number
+    ) {
+      if (this.name === 'projects') {
+        throw new Error('refresh failed after delete')
+      }
+
+      return count === undefined
+        ? originalGetAll.call(this, query)
+        : originalGetAll.call(this, query, count)
+    })
+
+    await expect(result.current.deleteProject('delete-refresh-failure')).resolves.toEqual({ deleted: true })
+    expect(await getProject('delete-refresh-failure')).toBeNull()
+    expect(await getActiveProjectId()).toBeNull()
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to refresh project summaries after delete:',
+      expect.objectContaining({ message: 'refresh failed after delete' })
+    )
   })
 
   it('strips missing slide and history asset references during partial recovery so later normal saves succeed', async () => {

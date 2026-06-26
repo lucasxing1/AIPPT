@@ -4,7 +4,7 @@ import { AppStateProvider } from '../../contexts/AppStateContext'
 import { useAppState } from '../../contexts/useAppState'
 import { useEdit } from '../../hooks/useEdit'
 import { useEditConflict } from '../../hooks/useEditConflict'
-import { EditHistoryItem, Slide } from '../../types'
+import { EditHistoryItem, EditSession, Slide } from '../../types'
 
 const editImageMock = vi.hoisted(() => vi.fn())
 
@@ -275,6 +275,50 @@ describe('useEdit persisted edit history', () => {
     })
 
     expect(result.current.conflict.hasUnsavedEdits(result.current.edit.editSession)).toBe(true)
+  })
+
+  it('stores callback cancel actions for discard confirmation and clears them afterward', () => {
+    const run = vi.fn()
+    const callbackAction = { type: 'callback' as const, run }
+    const dirtyEditSession: EditSession = {
+      slideId: 'slide-1',
+      originalImage: 'original-image',
+      currentImage: 'edited-image',
+      history: [],
+      userInput: ''
+    }
+    const { result } = renderHook(() => useEditConflict())
+
+    let canCancel = true
+    act(() => {
+      canCancel = result.current.tryCancelEdit(dirtyEditSession, callbackAction)
+    })
+
+    expect(canCancel).toBe(false)
+    expect(result.current.showConfirmDialog).toBe(true)
+    expect(result.current.pendingAction).toBe(callbackAction)
+
+    let confirmedAction: ReturnType<typeof result.current.confirmDiscard> | undefined
+    act(() => {
+      confirmedAction = result.current.confirmDiscard()
+    })
+
+    expect(confirmedAction).toBe(callbackAction)
+    expect(result.current.showConfirmDialog).toBe(false)
+    expect(result.current.pendingAction).toBeNull()
+
+    act(() => {
+      result.current.tryCancelEdit(dirtyEditSession, callbackAction)
+    })
+    expect(result.current.showConfirmDialog).toBe(true)
+    expect(result.current.pendingAction).toBe(callbackAction)
+
+    act(() => {
+      result.current.cancelDiscard()
+    })
+
+    expect(result.current.showConfirmDialog).toBe(false)
+    expect(result.current.pendingAction).toBeNull()
   })
 
   it('ignores stale submitEdit responses after the edit session changes', async () => {

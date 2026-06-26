@@ -20,6 +20,10 @@ import {
 } from '../../services/projectStore.test-utils'
 import type { ProjectRecord, ProjectStatus, Slide, WorkflowState } from '../../types'
 
+interface AutoSaveCancellation {
+  resume: () => void
+}
+
 interface AutoSaveProbeProps {
   projectId: string | null
   fileContent?: string
@@ -33,7 +37,7 @@ interface AutoSaveProbeProps {
   onProjectIdChange?: (projectId: string) => void
   onProjectSaved?: (projectId: string) => void
   onSaveReady?: (saveNow: () => Promise<void>) => void
-  onCancelReady?: (cancelPendingSaves: () => void) => void
+  onCancelReady?: (cancelPendingSaves: () => Promise<AutoSaveCancellation>) => void
   onSaved?: () => void
   autoSaveNow?: boolean
 }
@@ -70,7 +74,7 @@ function AutoSaveProbe({
     enabled
   })
   const { saveNow } = autoSave
-  const cancelPendingSaves = (autoSave as { cancelPendingSaves?: () => void }).cancelPendingSaves
+  const cancelPendingSaves = (autoSave as { cancelPendingSaves?: () => Promise<AutoSaveCancellation> }).cancelPendingSaves
 
   useEffect(() => {
     onSaveReady?.(saveNow)
@@ -454,7 +458,7 @@ describe('AutoSave durable persistence', () => {
 
   it('cancels a pending debounced save while a normal explicit save remains usable', async () => {
     vi.useFakeTimers()
-    let cancelPendingSaves: (() => void) | undefined
+    let cancelPendingSaves: (() => Promise<AutoSaveCancellation>) | undefined
 
     const cancelledView = render(
       <AutoSaveProbe
@@ -488,7 +492,7 @@ describe('AutoSave durable persistence', () => {
         }}
       />
     )
-    cancelPendingSaves!()
+    await cancelPendingSaves!()
 
     await act(async () => {
       vi.advanceTimersByTime(1000)
@@ -520,7 +524,7 @@ describe('AutoSave durable persistence', () => {
   })
 
   it('allows future debounced saves after cancellation while already reset without a project id', async () => {
-    let cancelPendingSaves: (() => void) | undefined
+    let cancelPendingSaves: (() => Promise<AutoSaveCancellation>) | undefined
     const onProjectIdChange = vi.fn()
     const onProjectSaved = vi.fn()
 
@@ -543,7 +547,7 @@ describe('AutoSave durable persistence', () => {
     })
     expect(cancelPendingSaves).toBeDefined()
 
-    cancelPendingSaves!()
+    await cancelPendingSaves!()
 
     rerender(
       <AutoSaveProbe
@@ -572,7 +576,7 @@ describe('AutoSave durable persistence', () => {
   })
 
   it('ignores a queued pagehide background snapshot after cancellation', async () => {
-    let cancelPendingSaves: (() => void) | undefined
+    let cancelPendingSaves: (() => Promise<AutoSaveCancellation>) | undefined
 
     const cancelledView = render(
       <AutoSaveProbe
@@ -606,7 +610,7 @@ describe('AutoSave durable persistence', () => {
       />
     )
     window.dispatchEvent(new PageTransitionEvent('pagehide'))
-    cancelPendingSaves!()
+    await cancelPendingSaves!()
 
     await act(async () => {
       await Promise.resolve()
@@ -624,7 +628,7 @@ describe('AutoSave durable persistence', () => {
     })
     await saveProjectRecord(existingProject)
 
-    let cancelPendingSaves: (() => void) | undefined
+    let cancelPendingSaves: (() => Promise<AutoSaveCancellation>) | undefined
     const onProjectSaved = vi.fn()
     let releaseProjectRead: (() => void) | undefined
     const projectReadStarted = new Promise<void>((resolve) => {
@@ -688,10 +692,11 @@ describe('AutoSave durable persistence', () => {
     window.dispatchEvent(new PageTransitionEvent('pagehide'))
 
     await projectReadStarted
-    cancelPendingSaves!()
+    const cancellation = cancelPendingSaves!()
+    releaseProjectRead!()
+    await cancellation
     await deleteProject(projectId)
 
-    releaseProjectRead!()
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
@@ -699,5 +704,58 @@ describe('AutoSave durable persistence', () => {
     expect(await getProject(projectId)).toBeNull()
     expect(onProjectSaved).not.toHaveBeenCalled()
     expect(await getActiveProjectId()).not.toBe(projectId)
+  })
+
+  it('resumes future saves for the same loaded project after cancellation is rolled back', async () => {
+    const projectId = 'delete-rollback-resumed'
+    await saveProjectRecord(buildProjectRecord({
+      id: projectId,
+      fileName: 'rollback.md',
+      fileContent: '# Before failed delete'
+    }))
+
+    let cancelPendingSaves: (() => Promise<AutoSaveCancellation>) | undefined
+    const onProjectSaved = vi.fn()
+    const { rerender } = render(
+      <AutoSaveProbe
+        projectId={projectId}
+        fileContent="# Before failed delete"
+        enabled={false}
+        autoSaveNow={false}
+        onProjectSaved={onProjectSaved}
+        onCancelReady={(cancel) => {
+          cancelPendingSaves = cancel
+        }}
+      />
+    )
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+    expect(cancelPendingSaves).toBeDefined()
+
+    const cancellation = await cancelPendingSaves!()
+    expect(cancellation).toEqual({ resume: expect.any(Function) })
+    cancellation.resume()
+
+    rerender(
+      <AutoSaveProbe
+        projectId={projectId}
+        fileContent="# After failed delete"
+        enabled
+        autoSaveNow={false}
+        onProjectSaved={onProjectSaved}
+        onCancelReady={(cancel) => {
+          cancelPendingSaves = cancel
+        }}
+      />
+    )
+
+    await waitFor(() => {
+      expect(onProjectSaved).toHaveBeenCalledWith(projectId)
+    }, { timeout: 2000 })
+    expect(await getProject(projectId)).toMatchObject({
+      fileContent: '# After failed delete'
+    })
   })
 })

@@ -585,7 +585,7 @@ describe('State Persistence Property Tests', () => {
     expect(restored.lastCompletedSlides.map((slide) => slide.id)).toEqual(['completed-slide'])
   })
 
-  it('strips missing durable image asset refs when restoring the active project', async () => {
+  it('reports missing durable image asset refs while restoring sanitized active project slides', async () => {
     const activeProject = await saveProjectRecord(buildProjectRecord({
       id: 'durable-missing-image',
       slides: [buildSlide({
@@ -593,11 +593,20 @@ describe('State Persistence Property Tests', () => {
         imageUrl: 'data:image/png;base64,bWlzc2luZw==',
         imageBase64: 'bWlzc2luZw=='
       })],
-      lastCompletedSlides: []
+      lastCompletedSlides: [buildSlide({
+        id: 'missing-completed-slide',
+        imageUrl: 'data:image/png;base64,bWlzc2luZy1jb21wbGV0ZWQ=',
+        imageBase64: 'bWlzc2luZy1jb21wbGV0ZWQ='
+      })],
     }))
-    const missingKey = activeProject.slides[0].imageStorageKey || activeProject.slides[0].imageAsset?.key
-    expect(missingKey).toBeTruthy()
-    await deleteStoredAsset(missingKey as string)
+    const missingSlideKey = activeProject.slides[0].imageStorageKey || activeProject.slides[0].imageAsset?.key
+    const missingCompletedKey =
+      activeProject.lastCompletedSlides[0].imageStorageKey ||
+      activeProject.lastCompletedSlides[0].imageAsset?.key
+    expect(missingSlideKey).toBeTruthy()
+    expect(missingCompletedKey).toBeTruthy()
+    await deleteStoredAsset(missingSlideKey as string)
+    await deleteStoredAsset(missingCompletedKey as string)
     await setActiveProjectId(activeProject.id)
     const onRestore = vi.fn()
 
@@ -608,13 +617,19 @@ describe('State Persistence Property Tests', () => {
     })
 
     const restored = onRestore.mock.calls.at(-1)?.[0] as RestoredProject & { missingAssetKeys?: string[] }
-    expect(restored.missingAssetKeys).toEqual([])
+    expect(restored.missingAssetKeys).toEqual([missingSlideKey, missingCompletedKey])
     expect(restored.slides[0]).toMatchObject({
       id: 'missing-image-slide',
       imageUrl: ''
     })
     expect(restored.slides[0].imageStorageKey).toBeUndefined()
     expect(restored.slides[0].imageAsset).toBeUndefined()
+    expect(restored.lastCompletedSlides[0]).toMatchObject({
+      id: 'missing-completed-slide',
+      imageUrl: ''
+    })
+    expect(restored.lastCompletedSlides[0].imageStorageKey).toBeUndefined()
+    expect(restored.lastCompletedSlides[0].imageAsset).toBeUndefined()
   })
 
   it('returns an empty missing asset list from the legacy saved project helper', () => {
@@ -665,7 +680,7 @@ describe('State Persistence Property Tests', () => {
     })
     expect(restored.slides[0].imageStorageKey).toBeUndefined()
     expect(restored.slides[0].imageAsset).toBeUndefined()
-    expect(restored.missingAssetKeys).toEqual([])
+    expect(restored.missingAssetKeys).toEqual([missingLegacyKey])
   })
 
   it('migrates legacy fallback images from the old slide image database', async () => {

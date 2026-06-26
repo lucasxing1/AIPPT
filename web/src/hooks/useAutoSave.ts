@@ -40,11 +40,15 @@ interface UseAutoSaveReturn {
   isSaving: boolean
   lastSaved: Date | null
   saveNow: () => Promise<void>
-  cancelPendingSaves: () => Promise<void>
+  cancelPendingSaves: () => Promise<AutoSaveCancellation>
 }
 
 type AutoSaveSnapshot = Required<UseAutoSaveParams> & {
   saveGeneration: number
+}
+
+interface AutoSaveCancellation {
+  resume: () => void
 }
 
 function isResetWorkflow(workflow: WorkflowState): boolean {
@@ -155,8 +159,24 @@ export function useAutoSave({
     )
   ), [])
 
-  const cancelPendingSaves = useCallback(async () => {
+  const cancelPendingSaves = useCallback(async (): Promise<AutoSaveCancellation> => {
+    const cancelledProjectId = latestSnapshotRef.current.projectId
     const shouldQuarantineNextGeneration = latestSnapshotRef.current.projectId !== null
+    let hasResumed = false
+    const resume = () => {
+      if (hasResumed || latestSnapshotRef.current.projectId !== cancelledProjectId) {
+        return
+      }
+
+      hasResumed = true
+      backgroundSavesCancelledRef.current = false
+      saveGenerationRef.current += 1
+      latestSnapshotRef.current = {
+        ...latestSnapshotRef.current,
+        saveGeneration: saveGenerationRef.current
+      }
+    }
+
     clearPendingTimer()
     cancelledSaveGenerationsRef.current.add(saveGenerationRef.current)
     backgroundSavesCancelledRef.current = shouldQuarantineNextGeneration
@@ -169,6 +189,7 @@ export function useAutoSave({
       saveGeneration: saveGenerationRef.current
     }
     await saveQueueRef.current.catch(() => undefined)
+    return { resume }
   }, [clearPendingTimer])
 
   /**

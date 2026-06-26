@@ -13,7 +13,8 @@ import {
   getProject,
   hydrateProjectImages,
   saveProjectRecord,
-  setActiveProjectId
+  setActiveProjectId,
+  verifyProjectIntegrity
 } from './projectStore'
 
 /**
@@ -28,6 +29,11 @@ export interface PersistedState {
     slides: Slide[]
     generationConfig: GenerationConfig
   } | null
+}
+
+export interface ActiveProjectRestore {
+  project: ProjectRecord
+  missingAssetKeys: string[]
 }
 
 /**
@@ -163,6 +169,20 @@ export class StorageService {
     }
     const match = slide.imageUrl?.match(/^data:[^;]+;base64,(.+)$/)
     return match?.[1] || ''
+  }
+
+  private static collectMissingLegacyImageKeys(
+    project: NonNullable<PersistedState['currentProject']>
+  ): string[] {
+    const missingKeys = new Set<string>()
+
+    for (const slide of project.slides) {
+      if (slide.imageStorageKey && !StorageService.extractBase64(slide) && !slide.imageUrl) {
+        missingKeys.add(slide.imageStorageKey)
+      }
+    }
+
+    return [...missingKeys]
   }
 
   private static imageKey(fileName: string, slide: Slide): string {
@@ -420,12 +440,16 @@ export class StorageService {
   /**
    * 加载当前活动项目，并在需要时把旧 localStorage 单项目状态迁移到 IndexedDB 项目库
    */
-  static async loadActiveProjectWithMigration(): Promise<ProjectRecord | null> {
+  static async loadActiveProjectForRestore(): Promise<ActiveProjectRestore | null> {
     const activeProjectId = await getActiveProjectId()
     if (activeProjectId) {
       const activeProject = await getProject(activeProjectId)
       if (activeProject) {
-        return hydrateProjectImages(activeProject)
+        const integrity = await verifyProjectIntegrity(activeProject)
+        return {
+          project: await hydrateProjectImages(activeProject),
+          missingAssetKeys: integrity.missingAssetKeys
+        }
       }
     }
 
@@ -435,6 +459,7 @@ export class StorageService {
       return null
     }
 
+    const missingAssetKeys = StorageService.collectMissingLegacyImageKeys(legacyProject)
     const savedProject = await saveProjectRecord(legacyProjectToRecord(legacyProject), {
       allowMissingAssets: true
     })
@@ -444,7 +469,15 @@ export class StorageService {
     }
     localStorage.removeItem(legacyStateKey())
 
-    return hydrateProjectImages(savedProject)
+    return {
+      project: await hydrateProjectImages(savedProject),
+      missingAssetKeys
+    }
+  }
+
+  static async loadActiveProjectWithMigration(): Promise<ProjectRecord | null> {
+    const restore = await StorageService.loadActiveProjectForRestore()
+    return restore?.project ?? null
   }
 
   /**

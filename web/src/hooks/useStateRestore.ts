@@ -8,7 +8,6 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { StorageService } from '../services/storageService'
-import { verifyProjectIntegrity } from '../services/projectStore'
 import { Slide, GenerationConfig, ProjectStatus, WorkflowState } from '../types'
 
 /**
@@ -67,14 +66,12 @@ export function useStateRestore(): UseStateRestoreReturn {
       setIsRestoring(true)
       
       try {
-        const project = await StorageService.loadActiveProjectWithMigration()
+        const restore = await StorageService.loadActiveProjectForRestore()
         if (cancelled) return
+        const project = restore?.project
         
         // 验证数据完整性
         if (project && (project.fileContent || project.slides.length > 0 || project.lastCompletedSlides.length > 0)) {
-          const integrity = await verifyProjectIntegrity(project)
-          if (cancelled) return
-
           setRestoredProject({
             projectId: project.id,
             fileContent: project.fileContent,
@@ -84,7 +81,7 @@ export function useStateRestore(): UseStateRestoreReturn {
             workflow: project.workflow,
             status: project.status,
             lastCompletedSlides: project.lastCompletedSlides,
-            missingAssetKeys: integrity.missingAssetKeys
+            missingAssetKeys: restore.missingAssetKeys
           })
           setHasRestoredData(true)
         }

@@ -9,7 +9,8 @@ import {
   hydrateProjectImages,
   renameProject as renameStoredProject,
   saveProjectRecord,
-  setActiveProjectId
+  setActiveProjectId,
+  verifyProjectIntegrity
 } from '../services/projectStore'
 import type { GenerationConfig, ProjectRecord, ProjectSummary, WorkflowState } from '../types'
 
@@ -21,9 +22,26 @@ interface CreateProjectInput {
   workflow: WorkflowState
 }
 
+export type OpenedProjectRecord = ProjectRecord & {
+  readonly missingAssetKeys?: string[]
+}
+
+interface DeleteProjectResult {
+  deleted: true
+}
+
 function titleFromFileName(fileName: string): string {
   const baseName = fileName.split(/[\\/]/).pop()?.replace(/\.[^/.]+$/, '').trim()
   return baseName || 'Untitled project'
+}
+
+function attachMissingAssetKeys(project: ProjectRecord, missingAssetKeys: string[]): OpenedProjectRecord {
+  Object.defineProperty(project, 'missingAssetKeys', {
+    value: missingAssetKeys,
+    enumerable: false,
+    configurable: true
+  })
+  return project as OpenedProjectRecord
 }
 
 export function useProjectManager() {
@@ -49,12 +67,14 @@ export function useProjectManager() {
     void refreshProjects()
   }, [refreshProjects])
 
-  const openProject = useCallback(async (id: string): Promise<ProjectRecord | null> => {
+  const openProject = useCallback(async (id: string): Promise<OpenedProjectRecord | null> => {
     const project = await getProject(id)
     if (!project) {
       await refreshProjects()
       return null
     }
+
+    const integrity = await verifyProjectIntegrity(project)
 
     const openedProject: ProjectRecord = {
       ...project,
@@ -64,7 +84,7 @@ export function useProjectManager() {
     const savedProject = await saveProjectRecord(openedProject, { allowMissingAssets: true })
     await setActiveProjectId(id)
     await refreshProjects()
-    return hydrateProjectImages(savedProject)
+    return attachMissingAssetKeys(await hydrateProjectImages(savedProject), integrity.missingAssetKeys)
   }, [refreshProjects])
 
   const createProject = useCallback(async (input: CreateProjectInput): Promise<ProjectRecord> => {
@@ -106,9 +126,14 @@ export function useProjectManager() {
     return hydratedProject
   }, [refreshProjects])
 
-  const deleteProject = useCallback(async (id: string) => {
+  const deleteProject = useCallback(async (id: string): Promise<DeleteProjectResult> => {
     await deleteStoredProject(id)
-    await refreshProjects()
+    try {
+      await refreshProjects()
+    } catch (error) {
+      console.error('Failed to refresh project summaries after delete:', error)
+    }
+    return { deleted: true }
   }, [refreshProjects])
 
   return {

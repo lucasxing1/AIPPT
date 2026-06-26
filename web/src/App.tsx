@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import Layout from './components/Layout'
 import LeftPanel from './components/LeftPanel'
 import CenterPanel from './components/CenterPanel'
@@ -21,11 +21,11 @@ import { useEditConflict } from './hooks/useEditConflict'
 import { useExport } from './hooks/useExport'
 import { useAutoSave } from './hooks/useAutoSave'
 import { useStateRestore } from './hooks/useStateRestore'
-import { useProjectManager } from './hooks/useProjectManager'
+import { useProjectManager, type OpenedProjectRecord } from './hooks/useProjectManager'
 import { StorageService } from './services/storageService'
 import { uploadDocument } from './services/uploadService'
 import { saveFullApiConfig } from './utils/apiConfig'
-import { ConfirmedSlidePrompt, GenerationConfig, ExportFormat, FullApiConfig, WorkflowState } from './types'
+import { ConfirmedSlidePrompt, GenerationConfig, ExportFormat, FullApiConfig, ProjectRecord, WorkflowState } from './types'
 
 function createEmptyWorkflowState(): WorkflowState {
   return {
@@ -110,6 +110,9 @@ function AppContent() {
 
   const [showRestoreDialog, setShowRestoreDialog] = useState(false)
   const [confirmedSlidePrompts, setConfirmedSlidePrompts] = useState<ConfirmedSlidePrompt[] | null>(null)
+  const [projectWarning, setProjectWarning] = useState<string | null>(null)
+  const projectLifecycleInFlightRef = useRef(false)
+  const pendingUploadRejectRef = useRef<((error: Error) => void) | null>(null)
 
   // 检查是否有可恢复的数据
   useEffect(() => {
@@ -172,8 +175,16 @@ function AppContent() {
     dismissRestore()
   }, [dismissRestore])
 
-  const restoreProjectRecord = useCallback((project: Awaited<ReturnType<typeof openProject>>) => {
+  const rejectPendingUpload = useCallback((message: string) => {
+    const rejectPending = pendingUploadRejectRef.current
+    pendingUploadRejectRef.current = null
+    rejectPending?.(new Error(message))
+    return Boolean(rejectPending)
+  }, [])
+
+  const restoreProjectRecord = useCallback((project: ProjectRecord | OpenedProjectRecord | null) => {
     if (!project) return
+    const missingAssetKeys = (project as OpenedProjectRecord).missingAssetKeys ?? []
 
     restoreState({
       projectId: project.id,
@@ -190,7 +201,12 @@ function AppContent() {
         ? project.workflow.slidePrompts
         : null
     )
-  }, [restoreState])
+    setProjectWarning(
+      missingAssetKeys.length > 0
+        ? t('restore.missingImages', { count: missingAssetKeys.length })
+        : null
+    )
+  }, [restoreState, t])
 
   const hasCurrentProjectContent = useCallback(() => Boolean(
     state.fileContent ||
@@ -210,19 +226,51 @@ function AppContent() {
     }
 
     cancelGeneration()
-    await action()
+    try {
+      await action()
+    } catch (err) {
+      console.error('Failed to run project lifecycle action:', err)
+      return false
+    }
     return true
   }, [cancelGeneration, hasCurrentProjectContent, saveNow])
 
-  const prepareProjectLifecycleChange = useCallback(async (action: () => Promise<void> | void) => {
-    const resumeAction = () => runProjectLifecycleChange(action)
-
-    if (!tryCancelEdit(editSession, { type: 'callback', run: resumeAction })) {
+  const runExclusiveProjectLifecycleChange = useCallback(async (action: () => Promise<boolean> | boolean) => {
+    if (projectLifecycleInFlightRef.current) {
       return false
     }
 
-    return runProjectLifecycleChange(action)
-  }, [editSession, runProjectLifecycleChange, tryCancelEdit])
+    projectLifecycleInFlightRef.current = true
+    try {
+      return await action()
+    } finally {
+      projectLifecycleInFlightRef.current = false
+    }
+  }, [])
+
+  const prepareProjectLifecycleChange = useCallback(async (action: () => Promise<void> | void) => {
+    rejectPendingUpload(t('upload.lifecycleActionSuperseded'))
+
+    if (projectLifecycleInFlightRef.current) {
+      setProjectWarning(t('projects.lifecycleInFlight'))
+      return false
+    }
+
+    const resumeAction = () => runExclusiveProjectLifecycleChange(() => runProjectLifecycleChange(action))
+    const resumeActionWithWarning = async () => {
+      const didRun = await resumeAction()
+      if (!didRun) {
+        setProjectWarning(t('projects.lifecycleActionFailed'))
+      }
+      return didRun
+    }
+
+    if (!tryCancelEdit(editSession, { type: 'callback', run: resumeActionWithWarning })) {
+      return false
+    }
+
+    return resumeActionWithWarning()
+  }, [editSession, rejectPendingUpload, runExclusiveProjectLifecycleChange, runProjectLifecycleChange, t, tryCancelEdit])
 
   const handleOpenProject = useCallback(async (id: string) => {
     await prepareProjectLifecycleChange(async () => {
@@ -253,33 +301,108 @@ function AppContent() {
   }, [duplicateProject, prepareProjectLifecycleChange, restoreProjectRecord])
 
   const handleDeleteProject = useCallback(async (id: string) => {
-    if (id === currentProjectId) {
-      await cancelPendingSaves()
-      cancelGeneration()
-    }
+    rejectPendingUpload(t('upload.lifecycleActionSuperseded'))
 
-    await deleteProject(id)
-    if (id === currentProjectId) {
+    const didRun = await runExclusiveProjectLifecycleChange(async () => {
+      if (id !== currentProjectId) {
+        try {
+          await deleteProject(id)
+        } catch (err) {
+          setProjectWarning(t('projects.deleteFailed'))
+          console.error('Failed to delete project:', err)
+        }
+        return true
+      }
+
+      const autoSaveCancellation = await cancelPendingSaves()
+      cancelGeneration()
+
+      try {
+        await deleteProject(id)
+      } catch (err) {
+        autoSaveCancellation.resume()
+        try {
+          await saveNow()
+        } catch (saveError) {
+          console.error('Failed to save current project after delete failure:', saveError)
+        }
+        setProjectWarning(t('projects.deleteFailed'))
+        console.error('Failed to delete project:', err)
+        return false
+      }
+
       resetState()
       setConfirmedSlidePrompts(null)
+      setProjectWarning(null)
+      return true
+    })
+    if (!didRun) {
+      setProjectWarning(t('projects.lifecycleInFlight'))
     }
-  }, [cancelGeneration, cancelPendingSaves, currentProjectId, deleteProject, resetState])
+  }, [
+    cancelGeneration,
+    cancelPendingSaves,
+    currentProjectId,
+    deleteProject,
+    rejectPendingUpload,
+    resetState,
+    runExclusiveProjectLifecycleChange,
+    saveNow,
+    t
+  ])
 
-  const uploadSelectedFile = useCallback(async (file: File) => {
+  const runUploadLifecycleChange = useCallback(async (file: File) => {
     const uploadResult = await uploadDocument(file)
-    setFile(file, uploadResult.content, uploadResult.filename || file.name)
-    setConfirmedSlidePrompts(null)
-  }, [setFile])
+    return runProjectLifecycleChange(() => {
+      setFile(file, uploadResult.content, uploadResult.filename || file.name)
+      setConfirmedSlidePrompts(null)
+    })
+  }, [runProjectLifecycleChange, setFile])
 
-  const handleFileSelect = useCallback(async (file: File) => {
-    const resumeAction = () => uploadSelectedFile(file)
+  const executeFileUpload = useCallback(async (file: File) => {
+    if (projectLifecycleInFlightRef.current) {
+      throw new Error(t('upload.lifecycleInFlight'))
+    }
+
+    const didReplaceDeck = await runExclusiveProjectLifecycleChange(() => runUploadLifecycleChange(file))
+    if (!didReplaceDeck) {
+      throw new Error(t('upload.lifecycleSaveFailed'))
+    }
+  }, [runExclusiveProjectLifecycleChange, runUploadLifecycleChange, t])
+
+  const handleFileSelect = useCallback((file: File): Promise<void> => {
+    if (!editSession) {
+      return executeFileUpload(file)
+    }
+
+    rejectPendingUpload(t('upload.lifecycleSuperseded'))
+
+    let resolvePendingUpload: () => void = () => undefined
+    let rejectPendingUploadPromise: (error: Error) => void = () => undefined
+    const pendingUpload = new Promise<void>((resolve, reject) => {
+      resolvePendingUpload = resolve
+      rejectPendingUploadPromise = reject
+    })
+
+    const resumeAction = async () => {
+      pendingUploadRejectRef.current = null
+      try {
+        await executeFileUpload(file)
+        resolvePendingUpload()
+      } catch (error) {
+        rejectPendingUploadPromise(error instanceof Error ? error : new Error(String(error)))
+        throw error
+      }
+    }
 
     if (!tryCancelEdit(editSession, { type: 'callback', run: resumeAction })) {
-      return
+      pendingUploadRejectRef.current = rejectPendingUploadPromise
+      return pendingUpload
     }
 
-    await resumeAction()
-  }, [editSession, tryCancelEdit, uploadSelectedFile])
+    pendingUploadRejectRef.current = null
+    return executeFileUpload(file)
+  }, [editSession, executeFileUpload, rejectPendingUpload, tryCancelEdit, t])
 
   const handleSlideSelect = useCallback((slideId: string) => {
     selectSlide(slideId)
@@ -332,15 +455,24 @@ function AppContent() {
 
   // 用户确认放弃编辑
   const handleConfirmDiscard = useCallback(() => {
+    const rejectPending = pendingUploadRejectRef.current
     const action = confirmDiscard()
-    if (!action) return
+    if (!action) {
+      pendingUploadRejectRef.current = null
+      rejectPending?.(new Error(t('upload.lifecycleDiscardCancelled')))
+      return
+    }
 
     if (action.type === 'switch' && action.targetSlide) {
+      pendingUploadRejectRef.current = null
+      rejectPending?.(new Error(t('upload.lifecycleDiscardCancelled')))
       // 切换到新的幻灯片编辑
       cancelEdit()
       selectSlide(action.targetSlide.id)
       beginEdit(action.targetSlide)
     } else if (action.type === 'cancel') {
+      pendingUploadRejectRef.current = null
+      rejectPending?.(new Error(t('upload.lifecycleDiscardCancelled')))
       // 取消当前编辑
       cancelEdit()
     } else if (action.type === 'callback' && typeof action.run === 'function') {
@@ -348,13 +480,19 @@ function AppContent() {
       void Promise.resolve(action.run()).catch((err) => {
         console.error('Failed to resume action after discarding edit:', err)
       })
+    } else {
+      pendingUploadRejectRef.current = null
+      rejectPending?.(new Error(t('upload.lifecycleDiscardCancelled')))
     }
-  }, [confirmDiscard, cancelEdit, selectSlide, beginEdit])
+  }, [confirmDiscard, cancelEdit, selectSlide, beginEdit, t])
 
   // 用户取消放弃编辑（继续编辑）
   const handleCancelDiscard = useCallback(() => {
+    const rejectPending = pendingUploadRejectRef.current
+    pendingUploadRejectRef.current = null
     cancelDiscard()
-  }, [cancelDiscard])
+    rejectPending?.(new Error(t('upload.lifecycleDiscardCancelled')))
+  }, [cancelDiscard, t])
 
   // 处理导出
   const handleExport = useCallback(async (format: ExportFormat) => {
@@ -479,6 +617,30 @@ function AppContent() {
     />
 
     {/* 导出错误提示 */}
+    {projectWarning && (
+      <div
+        role="alert"
+        className="fixed bottom-4 right-4 z-50 max-w-md rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-800 shadow-lg"
+      >
+        <div className="flex items-center gap-2">
+          <svg className="h-5 w-5 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.72-1.36 3.486 0l6.518 11.59c.75 1.334-.213 2.986-1.743 2.986H3.482c-1.53 0-2.493-1.652-1.743-2.986l6.518-11.59zM11 14a1 1 0 10-2 0 1 1 0 002 0zm-1-2a1 1 0 01-1-1V8a1 1 0 112 0v3a1 1 0 01-1 1z" clipRule="evenodd" />
+          </svg>
+          <span>{projectWarning}</span>
+          <button
+            type="button"
+            onClick={() => setProjectWarning(null)}
+            className="ml-2 text-amber-700 hover:text-amber-900"
+            aria-label={t('image.close')}
+          >
+            <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    )}
+
     {(exportError || exportState.error) && (
       <div className="fixed bottom-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg shadow-lg z-50">
         <div className="flex items-center gap-2">

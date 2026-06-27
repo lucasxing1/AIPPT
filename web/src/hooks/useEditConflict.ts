@@ -2,8 +2,9 @@ import { useState, useCallback } from 'react'
 import { EditSession, Slide } from '../types'
 
 interface PendingEditAction {
-  type: 'switch' | 'cancel'
+  type: 'switch' | 'cancel' | 'callback'
   targetSlide?: Slide
+  run?: () => unknown | Promise<unknown>
 }
 
 /**
@@ -17,12 +18,16 @@ export function useEditConflict() {
 
   /**
    * 检查是否有未保存的编辑
-   * 如果编辑会话存在且有历史记录，则认为有未保存的编辑
+   * 持久化历史会作为编辑会话的基线，不单独算作未保存修改
    */
   const hasUnsavedEdits = useCallback((editSession: EditSession | null): boolean => {
     if (!editSession) return false
-    // 如果有编辑历史，说明用户进行了修改
-    return editSession.history.length > 0
+    const savedHistoryLength = editSession.savedHistoryLength ?? 0
+    return (
+      editSession.currentImage !== editSession.originalImage ||
+      editSession.history.length > savedHistoryLength ||
+      editSession.userInput.trim().length > 0
+    )
   }, [])
 
   /**
@@ -62,7 +67,8 @@ export function useEditConflict() {
    * @returns true 如果可以直接取消，false 如果需要用户确认
    */
   const tryCancelEdit = useCallback((
-    currentEditSession: EditSession | null
+    currentEditSession: EditSession | null,
+    pendingAction?: PendingEditAction
   ): boolean => {
     // 如果没有当前编辑会话，不需要取消
     if (!currentEditSession) {
@@ -72,7 +78,7 @@ export function useEditConflict() {
     // 检查是否有未保存的编辑
     if (hasUnsavedEdits(currentEditSession)) {
       // 保存待处理的操作
-      setPendingAction({ type: 'cancel' })
+      setPendingAction(pendingAction ?? { type: 'cancel' })
       setShowConfirmDialog(true)
       return false
     }

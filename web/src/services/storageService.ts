@@ -5,7 +5,17 @@
  * Requirements: 10.1, 10.2, 10.3
  */
 
-import { Slide, ApiConfig, GenerationConfig } from '../types'
+import { Slide, ApiConfig, GenerationConfig, ProjectRecord, WorkflowState } from '../types'
+import {
+  clearActiveProjectId,
+  createProjectId,
+  getActiveProjectId,
+  getProject,
+  hydrateProjectImages,
+  saveProjectRecord,
+  setActiveProjectId,
+  verifyProjectIntegrity
+} from './projectStore'
 
 /**
  * localStorage 持久化结构
@@ -19,6 +29,11 @@ export interface PersistedState {
     slides: Slide[]
     generationConfig: GenerationConfig
   } | null
+}
+
+export interface ActiveProjectRestore {
+  project: ProjectRecord
+  missingAssetKeys: string[]
 }
 
 /**
@@ -65,6 +80,47 @@ interface SlideImageRecord {
   imageBase64: string
 }
 
+function legacyStateKey(): string {
+  return STORAGE_KEYS.STATE
+}
+
+function emptyWorkflow(): WorkflowState {
+  return {
+    status: 'idle',
+    outline: null,
+    slidePrompts: [],
+    expandedOutlinePages: [],
+    expandedDesignPages: [],
+    error: null
+  }
+}
+
+function projectTitleFromFileName(fileName: string): string {
+  const baseName = fileName.split(/[\\/]/).pop()?.replace(/\.[^/.]+$/, '').trim()
+  return baseName || 'Untitled project'
+}
+
+function legacyProjectToRecord(project: NonNullable<PersistedState['currentProject']>): ProjectRecord {
+  const now = Date.now()
+
+  return {
+    version: 2,
+    id: createProjectId(),
+    title: projectTitleFromFileName(project.fileName),
+    fileName: project.fileName,
+    fileContent: project.fileContent,
+    slides: project.slides,
+    generationConfig: project.generationConfig,
+    workflow: emptyWorkflow(),
+    status: project.slides.length > 0 ? 'generated' : 'draft',
+    generationRunId: null,
+    lastCompletedSlides: project.slides,
+    createdAt: now,
+    updatedAt: now,
+    lastOpenedAt: now
+  }
+}
+
 /**
  * StorageService 类
  * 提供状态持久化的所有操作
@@ -85,12 +141,48 @@ export class StorageService {
     }
   }
 
+  private static writeApiConfig(config: ApiConfig, logError = true): boolean {
+    try {
+      localStorage.setItem(STORAGE_KEYS.API_CONFIG, JSON.stringify(config))
+      return true
+    } catch (error) {
+      if (logError) {
+        console.error('Failed to save API config to localStorage:', error)
+      }
+      return false
+    }
+  }
+
+  private static loadDedicatedApiConfig(): ApiConfig | null {
+    try {
+      const serialized = localStorage.getItem(STORAGE_KEYS.API_CONFIG)
+      return serialized ? JSON.parse(serialized) as ApiConfig : null
+    } catch (error) {
+      console.error('Failed to load API config from localStorage:', error)
+      return null
+    }
+  }
+
   private static extractBase64(slide: Slide): string {
     if (slide.imageBase64) {
       return slide.imageBase64
     }
     const match = slide.imageUrl?.match(/^data:[^;]+;base64,(.+)$/)
     return match?.[1] || ''
+  }
+
+  private static collectMissingLegacyImageKeys(
+    project: NonNullable<PersistedState['currentProject']>
+  ): string[] {
+    const missingKeys = new Set<string>()
+
+    for (const slide of project.slides) {
+      if (slide.imageStorageKey && !StorageService.extractBase64(slide) && !slide.imageUrl) {
+        missingKeys.add(slide.imageStorageKey)
+      }
+    }
+
+    return [...missingKeys]
   }
 
   private static imageKey(fileName: string, slide: Slide): string {
@@ -230,10 +322,9 @@ export class StorageService {
     generationConfig: GenerationConfig
   ): boolean {
     try {
-      const currentState = StorageService.loadState()
       const newState: PersistedState = {
         version: CURRENT_VERSION,
-        apiConfig: currentState?.apiConfig || DEFAULT_API_CONFIG,
+        apiConfig: StorageService.loadApiConfig(),
         currentProject: {
           fileContent,
           fileName,
@@ -270,12 +361,18 @@ export class StorageService {
   static saveApiConfig(config: ApiConfig): boolean {
     try {
       const currentState = StorageService.loadState()
-      const newState: PersistedState = {
-        version: CURRENT_VERSION,
-        apiConfig: config,
-        currentProject: currentState?.currentProject || null
+      const savedDedicatedConfig = StorageService.writeApiConfig(config)
+
+      if (!currentState) {
+        return savedDedicatedConfig
       }
-      return StorageService.saveState(newState)
+
+      const newState: PersistedState = {
+        ...currentState,
+        version: CURRENT_VERSION,
+        apiConfig: config
+      }
+      return StorageService.writeState(newState) && savedDedicatedConfig
     } catch (error) {
       console.error('Failed to save API config:', error)
       return false
@@ -286,6 +383,11 @@ export class StorageService {
    * 加载 API 配置
    */
   static loadApiConfig(): ApiConfig {
+    const dedicatedConfig = StorageService.loadDedicatedApiConfig()
+    if (dedicatedConfig) {
+      return dedicatedConfig
+    }
+
     const state = StorageService.loadState()
     return state?.apiConfig || DEFAULT_API_CONFIG
   }
@@ -336,6 +438,49 @@ export class StorageService {
   }
 
   /**
+   * 加载当前活动项目，并在需要时把旧 localStorage 单项目状态迁移到 IndexedDB 项目库
+   */
+  static async loadActiveProjectForRestore(): Promise<ActiveProjectRestore | null> {
+    const activeProjectId = await getActiveProjectId()
+    if (activeProjectId) {
+      const activeProject = await getProject(activeProjectId)
+      if (activeProject) {
+        const integrity = await verifyProjectIntegrity(activeProject)
+        return {
+          project: await hydrateProjectImages(activeProject),
+          missingAssetKeys: integrity.missingAssetKeys
+        }
+      }
+    }
+
+    const apiConfig = StorageService.loadApiConfig()
+    const legacyProject = await StorageService.loadProjectWithImages()
+    if (!legacyProject) {
+      return null
+    }
+
+    const missingAssetKeys = StorageService.collectMissingLegacyImageKeys(legacyProject)
+    const savedProject = await saveProjectRecord(legacyProjectToRecord(legacyProject), {
+      allowMissingAssets: true
+    })
+    await setActiveProjectId(savedProject.id)
+    if (!StorageService.writeApiConfig(apiConfig)) {
+      throw new Error('Failed to preserve legacy API config')
+    }
+    localStorage.removeItem(legacyStateKey())
+
+    return {
+      project: await hydrateProjectImages(savedProject),
+      missingAssetKeys
+    }
+  }
+
+  static async loadActiveProjectWithMigration(): Promise<ProjectRecord | null> {
+    const restore = await StorageService.loadActiveProjectForRestore()
+    return restore?.project ?? null
+  }
+
+  /**
    * 清除项目数据（保留 API 配置）
    */
   static clearProject(): boolean {
@@ -347,6 +492,7 @@ export class StorageService {
         currentProject: null
       }
       StorageService.clearImageStore()
+      void clearActiveProjectId()
       return StorageService.saveState(newState)
     } catch (error) {
       console.error('Failed to clear project:', error)
@@ -425,6 +571,7 @@ export const saveApiConfig = StorageService.saveApiConfig
 export const loadApiConfig = StorageService.loadApiConfig
 export const loadProject = StorageService.loadProject
 export const loadProjectWithImages = StorageService.loadProjectWithImages
+export const loadActiveProjectWithMigration = StorageService.loadActiveProjectWithMigration
 export const clearProject = StorageService.clearProject
 export const clearAll = StorageService.clearAll
 export const hasProject = StorageService.hasProject

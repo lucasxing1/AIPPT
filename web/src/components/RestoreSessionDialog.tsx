@@ -32,6 +32,7 @@ export function RestoreSessionDialog({
 
   const slideCount = restoredProject.slides.length
   const fileName = restoredProject.fileName || t('restore.unnamed')
+  const missingImageCount = restoredProject.missingAssetKeys.length
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -100,6 +101,14 @@ export function RestoreSessionDialog({
             </div>
           </div>
         </div>
+
+        {missingImageCount > 0 && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 mb-6">
+            <p className="text-sm text-amber-900">
+              {t('restore.missingImages', { count: missingImageCount })}
+            </p>
+          </div>
+        )}
 
         {/* 按钮 */}
         <div className="flex gap-3">

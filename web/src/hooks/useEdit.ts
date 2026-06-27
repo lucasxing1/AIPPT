@@ -1,7 +1,11 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { useAppState } from '../contexts/useAppState'
 import { editImage } from '../services/editService'
 import { EditSession, EditHistoryItem, Slide } from '../types'
+
+function cloneEditHistory(history: EditHistoryItem[] = []): EditHistoryItem[] {
+  return history.map(item => ({ ...item }))
+}
 
 /**
  * 编辑会话管理 Hook
@@ -12,6 +16,13 @@ export function useEdit() {
   const { state, startEdit, updateEdit, endEdit, updateSlide, selectSlide } = useAppState()
   const [isEditing, setIsEditing] = useState(false)
   const [editError, setEditError] = useState<string | null>(null)
+  const editSessionVersionRef = useRef(0)
+  const editRequestIdRef = useRef(0)
+  const latestEditingSlideRef = useRef(state.editingSlide)
+
+  useEffect(() => {
+    latestEditingSlideRef.current = state.editingSlide
+  }, [state.editingSlide])
 
   /**
    * 开始编辑一个幻灯片
@@ -20,16 +31,21 @@ export function useEdit() {
     // 获取图片的 base64 数据
     const imageBase64 = slide.imageBase64 || ''
     const imageUrl = slide.imageUrl || (imageBase64 ? `data:image/png;base64,${imageBase64}` : '')
+    const history = cloneEditHistory(slide.editHistory)
 
     const session: EditSession = {
       slideId: slide.id,
       originalImage: imageBase64 || imageUrl,
       currentImage: imageBase64 || imageUrl,
-      history: [],
+      history,
+      savedHistoryLength: history.length,
       userInput: ''
     }
 
+    editSessionVersionRef.current += 1
+    editRequestIdRef.current += 1
     startEdit(session)
+    setIsEditing(false)
     setEditError(null)
   }, [startEdit])
 
@@ -38,14 +54,18 @@ export function useEdit() {
    * 每次编辑基于最新版本
    */
   const submitEdit = useCallback(async (instruction: string) => {
-    if (!state.editingSlide) return
+    const editSession = state.editingSlide
+    if (!editSession) return
+    const sessionVersion = editSessionVersionRef.current
+    const requestId = editRequestIdRef.current + 1
+    editRequestIdRef.current = requestId
 
     setIsEditing(true)
     setEditError(null)
 
     try {
       // 获取当前图片的 base64（去掉 data:image/png;base64, 前缀）
-      let currentBase64 = state.editingSlide.currentImage
+      let currentBase64 = editSession.currentImage
       if (currentBase64.startsWith('data:')) {
         currentBase64 = currentBase64.split(',')[1]
       }
@@ -93,11 +113,19 @@ export function useEdit() {
       })
 
       if (response.success && response.image_base64) {
+        if (
+          editRequestIdRef.current !== requestId ||
+          editSessionVersionRef.current !== sessionVersion ||
+          latestEditingSlideRef.current?.slideId !== editSession.slideId
+        ) {
+          return
+        }
+
         // 保存当前版本到历史
         const historyItem: EditHistoryItem = {
-          imageUrl: state.editingSlide.currentImage.startsWith('data:')
-            ? state.editingSlide.currentImage
-            : `data:image/png;base64,${state.editingSlide.currentImage}`,
+          imageUrl: editSession.currentImage.startsWith('data:')
+            ? editSession.currentImage
+            : `data:image/png;base64,${editSession.currentImage}`,
           imageBase64: currentBase64,
           instruction,
           timestamp: Date.now()
@@ -106,16 +134,25 @@ export function useEdit() {
         // 更新编辑会话
         updateEdit({
           currentImage: response.image_base64,
-          history: [...state.editingSlide.history, historyItem],
+          history: [...editSession.history, historyItem],
           userInput: ''
         })
       } else {
         throw new Error(response.message || '编辑失败')
       }
     } catch (error) {
+      if (
+        editRequestIdRef.current !== requestId ||
+        editSessionVersionRef.current !== sessionVersion ||
+        latestEditingSlideRef.current?.slideId !== editSession.slideId
+      ) {
+        return
+      }
       setEditError(error instanceof Error ? error.message : '编辑失败')
     } finally {
-      setIsEditing(false)
+      if (editRequestIdRef.current === requestId) {
+        setIsEditing(false)
+      }
     }
   }, [state.editingSlide, state.fullApiConfig, state.generationConfig, updateEdit])
 
@@ -132,11 +169,15 @@ export function useEdit() {
 
     if (index >= 0) {
       // 保留该版本之前的历史（不包括该版本）
-      const newHistory = state.editingSlide.history.slice(0, index)
+      const newHistory = cloneEditHistory(state.editingSlide.history.slice(0, index))
 
+      editSessionVersionRef.current += 1
+      editRequestIdRef.current += 1
+      setIsEditing(false)
       updateEdit({
         currentImage: historyItem.imageBase64,
-        history: newHistory
+        history: newHistory,
+        savedHistoryLength: Math.min(state.editingSlide.savedHistoryLength ?? 0, newHistory.length)
       })
     }
   }, [state.editingSlide, updateEdit])
@@ -156,27 +197,43 @@ export function useEdit() {
     }
 
     const slideId = state.editingSlide.slideId
+    const existingSlide = state.slides.find(slide => slide.id === slideId) ||
+      state.lastCompletedSlides.find(slide => slide.id === slideId)
+    if (!existingSlide) {
+      setEditError('无法确认编辑：幻灯片不存在')
+      return
+    }
+
+    const editHistory = cloneEditHistory(state.editingSlide.history)
 
     // 更新幻灯片 - 这会立即更新预览面板
     updateSlide(slideId, {
       imageBase64: currentBase64,
-      imageUrl: `data:image/png;base64,${currentBase64}`
+      imageUrl: `data:image/png;base64,${currentBase64}`,
+      editHistory,
+      updatedAt: Date.now()
     })
 
     // 保持选中状态，确保用户可以看到更新后的幻灯片
     selectSlide(slideId)
 
     // 结束编辑
+    editSessionVersionRef.current += 1
+    editRequestIdRef.current += 1
     endEdit()
+    setIsEditing(false)
     setEditError(null)
-  }, [state.editingSlide, updateSlide, selectSlide, endEdit])
+  }, [state.editingSlide, state.slides, state.lastCompletedSlides, updateSlide, selectSlide, endEdit])
 
   /**
    * 取消编辑 - 丢弃所有编辑
    * Requirements: 7.6
    */
   const cancelEdit = useCallback(() => {
+    editSessionVersionRef.current += 1
+    editRequestIdRef.current += 1
     endEdit()
+    setIsEditing(false)
     setEditError(null)
   }, [endEdit])
 

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { ReactNode, useState } from 'react'
 import FileUpload from './FileUpload'
 import FilePreview from './FilePreview'
 import { useUiPreferences } from '../contexts/useUiPreferences'
@@ -7,13 +7,14 @@ interface LeftPanelProps {
   fileName: string | null
   fileContent: string
   onFileSelect: (file: File) => Promise<void> | void
+  children?: ReactNode
 }
 
 /**
  * 左侧面板 - 文件上传区
  * 包含文件拖拽上传区域和文件内容预览
  */
-function LeftPanel({ fileName, fileContent, onFileSelect }: LeftPanelProps) {
+function LeftPanel({ fileName, fileContent, onFileSelect, children }: LeftPanelProps) {
   const { t } = useUiPreferences()
   const [uploadError, setUploadError] = useState<string | null>(null)
 
@@ -78,6 +79,8 @@ function LeftPanel({ fileName, fileContent, onFileSelect }: LeftPanelProps) {
           />
         </div>
       )}
+
+      {children}
     </div>
   )
 }

@@ -8,16 +8,32 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { StorageService } from '../services/storageService'
-import { Slide, GenerationConfig } from '../types'
+import { Slide, GenerationConfig, ProjectStatus, WorkflowState } from '../types'
 
 /**
  * 恢复的项目数据
  */
 export interface RestoredProject {
+  projectId: string
   fileContent: string
   fileName: string
   slides: Slide[]
   generationConfig: GenerationConfig
+  workflow: WorkflowState
+  status: ProjectStatus
+  lastCompletedSlides: Slide[]
+  missingAssetKeys: string[]
+}
+
+function emptyWorkflow(): WorkflowState {
+  return {
+    status: 'idle',
+    outline: null,
+    slidePrompts: [],
+    expandedOutlinePages: [],
+    expandedDesignPages: [],
+    error: null
+  }
 }
 
 /**
@@ -50,16 +66,22 @@ export function useStateRestore(): UseStateRestoreReturn {
       setIsRestoring(true)
       
       try {
-        const project = await StorageService.loadProjectWithImages()
+        const restore = await StorageService.loadActiveProjectForRestore()
         if (cancelled) return
+        const project = restore?.project
         
         // 验证数据完整性
-        if (project && (project.fileContent || project.slides.length > 0)) {
+        if (project && (project.fileContent || project.slides.length > 0 || project.lastCompletedSlides.length > 0)) {
           setRestoredProject({
+            projectId: project.id,
             fileContent: project.fileContent,
             fileName: project.fileName,
             slides: project.slides,
-            generationConfig: project.generationConfig
+            generationConfig: project.generationConfig,
+            workflow: project.workflow,
+            status: project.status,
+            lastCompletedSlides: project.lastCompletedSlides,
+            missingAssetKeys: restore.missingAssetKeys
           })
           setHasRestoredData(true)
         }
@@ -126,10 +148,15 @@ export function loadSavedProject(): RestoredProject | null {
   }
 
   return {
+    projectId: '',
     fileContent: project.fileContent,
     fileName: project.fileName,
     slides: project.slides,
-    generationConfig: project.generationConfig
+    generationConfig: project.generationConfig,
+    workflow: emptyWorkflow(),
+    status: project.slides.length > 0 ? 'generated' : 'draft',
+    lastCompletedSlides: project.slides,
+    missingAssetKeys: []
   }
 }
 

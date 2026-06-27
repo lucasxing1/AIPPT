@@ -517,6 +517,62 @@ describe('IndexedDB project store', () => {
     expect(getCallsBeforeEachSuccess[0]).toBe(assetGetCalls)
   })
 
+  it('hydrates all slide and edit-history assets using a single readonly transaction', async () => {
+    const historyImage = 'YmF0Y2gtaGlzdG9yeQ=='
+    const saved = await saveProjectRecord(buildProjectRecord({
+      id: 'batch-hydrate-assets',
+      title: 'Batch hydrate deck',
+      slides: [
+        imageSlide({
+          id: 'slide-1',
+          imageBase64: CURRENT_IMAGE,
+          editHistory: [{
+            imageUrl: `data:image/webp;base64,${historyImage}`,
+            imageBase64: historyImage,
+            instruction: 'make this calmer',
+            timestamp: 1234
+          }]
+        }),
+        imageSlide({ id: 'slide-2', pageNumber: 2, imageBase64: SECOND_IMAGE })
+      ],
+      lastCompletedSlides: [
+        imageSlide({ id: 'completed-slide', imageBase64: COMPLETED_IMAGE })
+      ]
+    }))
+    const transactionSpy = vi.spyOn(IDBDatabase.prototype, 'transaction')
+    transactionSpy.mockClear()
+
+    await hydrateProjectImages(saved)
+
+    const readonlyAssetTransactions = transactionSpy.mock.calls.filter(([storeNames, mode]) => (
+      storeNames === 'assets' && mode === 'readonly'
+    ))
+    expect(readonlyAssetTransactions).toHaveLength(1)
+  })
+
+  it('checks project image integrity using a single readonly asset transaction', async () => {
+    const saved = await saveProjectRecord(buildProjectRecord({
+      id: 'batch-integrity-assets',
+      title: 'Batch integrity deck',
+      slides: [
+        imageSlide({ id: 'slide-1', imageBase64: CURRENT_IMAGE }),
+        imageSlide({ id: 'slide-2', pageNumber: 2, imageBase64: SECOND_IMAGE })
+      ],
+      lastCompletedSlides: [
+        imageSlide({ id: 'completed-slide', imageBase64: COMPLETED_IMAGE })
+      ]
+    }))
+    const transactionSpy = vi.spyOn(IDBDatabase.prototype, 'transaction')
+    transactionSpy.mockClear()
+
+    await verifyProjectIntegrity(saved)
+
+    const readonlyAssetTransactions = transactionSpy.mock.calls.filter(([storeNames, mode]) => (
+      storeNames === 'assets' && mode === 'readonly'
+    ))
+    expect(readonlyAssetTransactions).toHaveLength(1)
+  })
+
   it('reports missing image assets instead of silently claiming full recovery', async () => {
     const project = buildProjectRecord({
       id: 'missing-assets',

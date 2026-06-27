@@ -110,10 +110,11 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
 export async function hydrateProjectImages(project: ProjectRecord): Promise<ProjectRecord> {
   const db = await openDb()
   try {
+    const assetMap = await loadAssetMap(db, collectAssetKeys(project))
     return {
       ...project,
-      slides: await hydrateSlides(db, project.slides),
-      lastCompletedSlides: await hydrateSlides(db, project.lastCompletedSlides)
+      slides: hydrateSlidesSync(project.slides, assetMap),
+      lastCompletedSlides: hydrateSlidesSync(project.lastCompletedSlides, assetMap)
     }
   } finally {
     db.close()
@@ -125,15 +126,9 @@ export async function verifyProjectIntegrity(
 ): Promise<{ ok: boolean; missingAssetKeys: string[] }> {
   const db = await openDb()
   try {
-    const missingAssetKeys: string[] = []
     const assetKeys = collectAssetKeys(project)
-
-    for (const key of assetKeys) {
-      const asset = await getAsset(db, key)
-      if (!asset) {
-        missingAssetKeys.push(key)
-      }
-    }
+    const assetMap = await loadAssetMap(db, assetKeys)
+    const missingAssetKeys = assetKeys.filter((key) => !assetMap.has(key))
 
     return {
       ok: missingAssetKeys.length === 0,
@@ -685,6 +680,34 @@ function applyEditHistoryAssetMetadata(
   })
 }
 
+async function loadAssetMap(db: IDBDatabase, keys: string[]): Promise<Map<string, ProjectAssetRecord>> {
+  const assetMap = new Map<string, ProjectAssetRecord>()
+  if (keys.length === 0) {
+    return assetMap
+  }
+
+  const transaction = db.transaction(ASSET_STORE, 'readonly')
+  const done = transactionDone(transaction)
+  try {
+    const assetStore = transaction.objectStore(ASSET_STORE)
+    const assets = await Promise.all(keys.map((key) => (
+      requestToPromise<ProjectAssetRecord | undefined>(assetStore.get(key))
+    )))
+    await done
+    keys.forEach((key, index) => {
+      const asset = assets[index]
+      if (asset) {
+        assetMap.set(key, asset)
+      }
+    })
+    return assetMap
+  } catch (error) {
+    abortTransaction(transaction)
+    await ignoreTransactionAbort(done)
+    throw error
+  }
+}
+
 function stripMissingSlideAssetRef(slide: Slide): Slide {
   const cleanSlide = { ...slide }
   delete cleanSlide.imageStorageKey
@@ -695,46 +718,30 @@ function stripMissingSlideAssetRef(slide: Slide): Slide {
   }
 }
 
-async function getAsset(db: IDBDatabase, key: string): Promise<ProjectAssetRecord | null> {
-  const transaction = db.transaction(ASSET_STORE, 'readonly')
-  const done = transactionDone(transaction)
-  const asset = await requestToPromise<ProjectAssetRecord | undefined>(
-    transaction.objectStore(ASSET_STORE).get(key)
-  )
-  await done
-  return asset ?? null
-}
-
-async function hydrateSlides(db: IDBDatabase, slides: Slide[]): Promise<Slide[]> {
-  const hydratedSlides: Slide[] = []
-
-  for (const slide of slides) {
+function hydrateSlidesSync(slides: Slide[], assetMap: Map<string, ProjectAssetRecord>): Slide[] {
+  return slides.map((slide) => {
     const key = getSlideAssetKey(slide)
     if (!key) {
-      hydratedSlides.push(await hydrateEditHistory(db, cloneSlide(slide)))
-      continue
+      return hydrateEditHistorySync(cloneSlide(slide), assetMap)
     }
 
-    const asset = await getAsset(db, key)
+    const asset = assetMap.get(key)
     if (!asset) {
-      hydratedSlides.push(await hydrateEditHistory(db, stripMissingSlideAssetRef(cloneSlideWithoutBase64(slide))))
-      continue
+      return hydrateEditHistorySync(stripMissingSlideAssetRef(cloneSlideWithoutBase64(slide)), assetMap)
     }
 
     const imageBase64 = arrayBufferToBase64(asset.bytes)
-    hydratedSlides.push(await hydrateEditHistory(db, {
+    return hydrateEditHistorySync({
       ...cloneSlideWithoutBase64(slide),
       imageStorageKey: key,
       imageAsset: createSlideAssetRef(asset),
       imageBase64,
       imageUrl: `data:${asset.mimeType};base64,${imageBase64}`
-    }))
-  }
-
-  return hydratedSlides
+    }, assetMap)
+  })
 }
 
-async function hydrateEditHistory(db: IDBDatabase, slide: Slide): Promise<Slide> {
+function hydrateEditHistorySync(slide: Slide, assetMap: Map<string, ProjectAssetRecord>): Slide {
   if (!slide.editHistory) {
     return slide
   }
@@ -747,7 +754,7 @@ async function hydrateEditHistory(db: IDBDatabase, slide: Slide): Promise<Slide>
       continue
     }
 
-    const asset = await getAsset(db, key)
+    const asset = assetMap.get(key)
     if (!asset) {
       editHistory.push({
         ...cloneEditHistoryItemWithoutAssetKey(item),

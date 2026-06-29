@@ -161,6 +161,33 @@ output/ppt_20241201_123456/
 └── images/                  # Slide images
 ```
 
+## 🧪 Development Checks
+
+Recommended local runtime:
+- Python 3.11 or 3.12
+- Node.js 20
+
+Backend checks:
+
+```bash
+python -m pip install -r requirements-dev.txt
+ruff check api src tests main.py
+ruff format --check api src tests main.py
+python -m pytest --cov=api --cov=src --cov-report=term-missing
+```
+
+Frontend checks:
+
+```bash
+cd web
+npm ci
+npm run lint
+npm run test
+npm run build
+```
+
+GitHub Actions runs the same default checks on `main` and `dev` pull requests and pushes. Real model API calls are intentionally not part of the default CI because they require private keys and can be flaky.
+
 ## 📋 TODO
 
 - [ ] Upgrade generated PPT images into structured, editable PPT content

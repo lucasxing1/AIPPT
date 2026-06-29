@@ -161,6 +161,33 @@ output/ppt_20241201_123456/
 └── images/                  # 幻灯片图片
 ```
 
+## 🧪 开发检查
+
+推荐本地运行环境：
+- Python 3.11 或 3.12
+- Node.js 20
+
+后端检查：
+
+```bash
+python -m pip install -r requirements-dev.txt
+ruff check api src tests main.py
+ruff format --check api src tests main.py
+python -m pytest --cov=api --cov=src --cov-report=term-missing
+```
+
+前端检查：
+
+```bash
+cd web
+npm ci
+npm run lint
+npm run test
+npm run build
+```
+
+GitHub Actions 会在 `main` 和 `dev` 的 Pull Request 与 push 上运行这些默认检查。真实模型 API 调用需要私有 Key，且容易受外部服务波动影响，因此不放入默认 CI。
+
 ## 📋 TODO
 
 - [ ] 将生成的 PPT 图片增强为结构化、可编辑的 PPT 内容

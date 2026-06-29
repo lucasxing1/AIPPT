@@ -32,9 +32,7 @@ class ModelRouterTest(unittest.TestCase):
             ),
         )
 
-        response = SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))]
-        )
+        response = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
 
         with patch("src.model_router.OpenAI") as openai_cls:
             create = openai_cls.return_value.chat.completions.create

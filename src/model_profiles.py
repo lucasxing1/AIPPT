@@ -131,7 +131,9 @@ def load_profiles_from_env(env_path: Optional[Path] = None) -> Optional[ModelPro
     )
 
 
-def load_default_profiles(config_data: Optional[Dict[str, Any]] = None) -> Optional[ModelProfileSet]:
+def load_default_profiles(
+    config_data: Optional[Dict[str, Any]] = None,
+) -> Optional[ModelProfileSet]:
     """Load profiles from the repository-local config.yaml data."""
     if config_data is None:
         try:
@@ -210,7 +212,7 @@ def _parse_env_like_file(path: Path) -> Dict[str, str]:
         if not line or line.startswith("#"):
             continue
         if line.startswith("export "):
-            line = line[len("export "):].strip()
+            line = line[len("export ") :].strip()
         if "=" in line:
             key, value = line.split("=", 1)
         elif ":" in line:

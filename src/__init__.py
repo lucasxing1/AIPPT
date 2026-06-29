@@ -9,6 +9,11 @@ from .prompts import PromptTemplates
 
 __version__ = "0.1.0"
 __all__ = [
-    "PPTConfig", "APIConfig", "PPTGenerator", "PromptTemplates",
-    "load_sample_material", "get_output_dir", "get_doc_dir"
+    "PPTConfig",
+    "APIConfig",
+    "PPTGenerator",
+    "PromptTemplates",
+    "load_sample_material",
+    "get_output_dir",
+    "get_doc_dir",
 ]

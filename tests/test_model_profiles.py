@@ -1,6 +1,12 @@
 import unittest
 
-from src.model_profiles import ModelProfile, ModelProfileSet, load_default_profiles, load_profiles_from_env, resolve_model_profiles
+from src.model_profiles import (
+    ModelProfile,
+    ModelProfileSet,
+    load_default_profiles,
+    load_profiles_from_env,
+    resolve_model_profiles,
+)
 
 
 class ModelProfileResolutionTest(unittest.TestCase):
@@ -49,9 +55,15 @@ class ModelProfileResolutionTest(unittest.TestCase):
 
     def test_public_view_masks_api_keys(self):
         profiles = ModelProfileSet(
-            prompt=ModelProfile(role="prompt", model="text", base_url="https://t/v1", api_key="secret"),
-            image=ModelProfile(role="image", model="image", base_url="https://i/v1", api_key="secret"),
-            edit=ModelProfile(role="edit", model="image", base_url="https://i/v1", api_key="secret"),
+            prompt=ModelProfile(
+                role="prompt", model="text", base_url="https://t/v1", api_key="secret"
+            ),
+            image=ModelProfile(
+                role="image", model="image", base_url="https://i/v1", api_key="secret"
+            ),
+            edit=ModelProfile(
+                role="edit", model="image", base_url="https://i/v1", api_key="secret"
+            ),
         )
 
         public = profiles.to_public_dict()

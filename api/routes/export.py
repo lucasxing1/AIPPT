@@ -4,6 +4,7 @@
 
 import sys
 import base64
+import asyncio
 import tempfile
 import shutil
 from pathlib import Path
@@ -50,7 +51,7 @@ async def export_presentation(request: ExportRequest):
         if request.format == "pdf":
             output_path = temp_dir / "presentation.pdf"
             exporter = PDFExporter()
-            exporter.export(image_paths, str(output_path))
+            await asyncio.to_thread(exporter.export, image_paths, str(output_path))
 
             return FileResponse(
                 path=str(output_path),
@@ -61,7 +62,9 @@ async def export_presentation(request: ExportRequest):
 
         elif request.format == "pptx":
             output_path = temp_dir / "presentation.pptx"
-            _export_pptx(image_paths, str(output_path), aspect_ratio=request.aspect_ratio)
+            await asyncio.to_thread(
+                _export_pptx, image_paths, str(output_path), aspect_ratio=request.aspect_ratio
+            )
 
             return FileResponse(
                 path=str(output_path),

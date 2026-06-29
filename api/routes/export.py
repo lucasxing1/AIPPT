@@ -4,6 +4,7 @@
 
 import sys
 import base64
+import asyncio
 import tempfile
 import shutil
 from pathlib import Path
@@ -25,57 +26,56 @@ router = APIRouter(prefix="/api", tags=["export"])
 async def export_presentation(request: ExportRequest):
     """
     导出演示文稿
-    
+
     Args:
         request: 导出请求，包含所有幻灯片和格式
-        
+
     Returns:
         FileResponse: 导出的文件
     """
     try:
         temp_dir = Path(tempfile.mkdtemp())
         image_paths = []
-        
+
         # 解码并保存所有图片
         for idx, slide in enumerate(request.slides):
             image_data = base64.b64decode(slide.image_base64)
             image_path = temp_dir / f"slide_{idx + 1}.png"
-            
-            with open(image_path, 'wb') as f:
+
+            with open(image_path, "wb") as f:
                 f.write(image_data)
-            
+
             image_paths.append(str(image_path))
-        
+
         # 根据格式导出
         if request.format == "pdf":
             output_path = temp_dir / "presentation.pdf"
             exporter = PDFExporter()
-            exporter.export(image_paths, str(output_path))
-            
+            await asyncio.to_thread(exporter.export, image_paths, str(output_path))
+
             return FileResponse(
                 path=str(output_path),
                 media_type="application/pdf",
                 filename="presentation.pdf",
-                background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True)
+                background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
             )
-        
+
         elif request.format == "pptx":
             output_path = temp_dir / "presentation.pptx"
-            _export_pptx(image_paths, str(output_path), aspect_ratio=request.aspect_ratio)
-            
+            await asyncio.to_thread(
+                _export_pptx, image_paths, str(output_path), aspect_ratio=request.aspect_ratio
+            )
+
             return FileResponse(
                 path=str(output_path),
                 media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                 filename="presentation.pptx",
-                background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True)
+                background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
             )
-        
+
         else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"不支持的导出格式: {request.format}"
-            )
-    
+            raise HTTPException(status_code=400, detail=f"不支持的导出格式: {request.format}")
+
     except HTTPException:
         if "temp_dir" in locals():
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -84,16 +84,13 @@ async def export_presentation(request: ExportRequest):
     except Exception as e:
         if "temp_dir" in locals():
             shutil.rmtree(temp_dir, ignore_errors=True)
-        raise HTTPException(
-            status_code=500,
-            detail=f"导出失败: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"导出失败: {str(e)}")
 
 
 def _export_pptx(image_paths: list, output_path: str, aspect_ratio: str = "16:9"):
     """
     导出为 PPTX 格式
-    
+
     Args:
         image_paths: 图片路径列表
         output_path: 输出路径
@@ -103,10 +100,10 @@ def _export_pptx(image_paths: list, output_path: str, aspect_ratio: str = "16:9"
         from pptx.util import Inches
     except ImportError:
         raise Exception("需要安装 python-pptx: pip install python-pptx")
-    
+
     # 创建演示文稿
     prs = Presentation()
-    
+
     # 设置幻灯片尺寸
     if aspect_ratio == "4:3":
         prs.slide_width = Inches(10)
@@ -114,20 +111,15 @@ def _export_pptx(image_paths: list, output_path: str, aspect_ratio: str = "16:9"
     else:
         prs.slide_width = Inches(10)
         prs.slide_height = Inches(5.625)
-    
+
     # 添加每一页
     for image_path in image_paths:
         # 使用空白布局
         blank_slide_layout = prs.slide_layouts[6]
         slide = prs.slides.add_slide(blank_slide_layout)
-        
+
         # 添加图片，填充整个幻灯片
-        slide.shapes.add_picture(
-            image_path,
-            0, 0,
-            width=prs.slide_width,
-            height=prs.slide_height
-        )
-    
+        slide.shapes.add_picture(image_path, 0, 0, width=prs.slide_width, height=prs.slide_height)
+
     # 保存
     prs.save(output_path)

@@ -85,7 +85,9 @@ class PromptTemplates:
 """
 
     @staticmethod
-    def get_prompts_from_outline_user(source_material: str, outline_json: str, num_pages: int) -> str:
+    def get_prompts_from_outline_user(
+        source_material: str, outline_json: str, num_pages: int
+    ) -> str:
         """根据确认大纲生成逐页 prompt 的用户提示"""
         return f"""请根据已确认的大纲生成 {num_pages} 页 PPT 的逐页设计说明和图像 prompt。
 
@@ -97,7 +99,7 @@ class PromptTemplates:
 
 请严格输出 JSON。
 """
-    
+
     @staticmethod
     def get_initial_prompt_system(user_requirements: str, num_pages: int) -> str:
         """生成初始 Prompt 的系统指令"""
@@ -208,9 +210,7 @@ class PromptTemplates:
 
     @staticmethod
     def get_review_prompt_user(
-        user_requirements: str,
-        source_material: str,
-        prompts_json: str
+        user_requirements: str, source_material: str, prompts_json: str
     ) -> str:
         """检查优化 Prompt 的用户提示"""
         return f"""请检查并优化以下 Prompt：

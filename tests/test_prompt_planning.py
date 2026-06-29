@@ -57,7 +57,9 @@ def _prompt_plan(page_count=3):
 def test_generate_outline_retries_and_validates_page_count():
     bad = _outline(page_count=2)
     good = _outline(page_count=3)
-    client = FakeTextClient([json.dumps(bad, ensure_ascii=False), json.dumps(good, ensure_ascii=False)])
+    client = FakeTextClient(
+        [json.dumps(bad, ensure_ascii=False), json.dumps(good, ensure_ascii=False)]
+    )
     generator = PromptGenerator(client)
     config = PPTConfig(num_pages=3, user_requirements="强调架构风险", target_audience="研发团队")
 
@@ -79,7 +81,9 @@ def test_generate_prompts_from_outline_keeps_display_content_and_exact_pages():
 
     assert len(prompt_data.slide_prompts) == 3
     assert prompt_data.slide_prompts[0].display_content.startswith("第 1 页展示")
-    assert prompt_data.slide_prompts[0].prompt.startswith("你生成的 PPT 其中一页的内容，要图文并茂。")
+    assert prompt_data.slide_prompts[0].prompt.startswith(
+        "你生成的 PPT 其中一页的内容，要图文并茂。"
+    )
 
 
 def test_generate_prompts_from_outline_rejects_internal_prompt_without_prefix():

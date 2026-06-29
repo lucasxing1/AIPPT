@@ -15,7 +15,7 @@ from .routes import upload, generate, edit, export, models
 app = FastAPI(
     title="AI PPT Generator API",
     description="API for AI-powered PPT generation with WebUI",
-    version="1.0.0"
+    version="1.0.0",
 )
 
 # 配置 CORS 中间件
@@ -50,4 +50,5 @@ if web_dist_path.exists():
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)

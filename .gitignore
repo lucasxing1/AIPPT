@@ -11,6 +11,8 @@ ENV/
 *.egg-info/
 .installed.cfg
 *.egg
+.coverage*
+htmlcov/
 
 # Node.js (前端依赖由 web/.gitignore 管理，这里作为备份)
 node_modules/

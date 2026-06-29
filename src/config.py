@@ -3,7 +3,6 @@
 定义所有配置类，支持从 YAML 文件加载
 """
 
-import os
 from dataclasses import dataclass, asdict
 from typing import Dict, Any, Literal, Optional
 from pathlib import Path
@@ -18,7 +17,7 @@ CONFIG_FILE = Path(__file__).parent.parent / "config.yaml"
 def load_yaml_config() -> Dict[str, Any]:
     """加载 YAML 配置文件"""
     if CONFIG_FILE.exists():
-        with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     return {}
 
@@ -45,23 +44,24 @@ def reload_config():
 @dataclass
 class APIConfig:
     """API 配置"""
+
     # 图像生成 API 配置
     image_api_key: str = None
     image_base_url: str = None
     image_model: str = None
-    
+
     # 文本生成 API 配置
     text_api_format: Literal["gemini", "openai"] = None  # API 格式
     text_model: str = None
     text_base_url: str = None  # 可选，单独的文本 API 地址
-    text_api_key: str = None   # 可选，单独的文本 API 密钥
+    text_api_key: str = None  # 可选，单独的文本 API 密钥
     text_thinking: Optional[Literal["enabled", "disabled"]] = None  # OpenAI-compatible 思考模式
     text_thinking_level: Optional[Literal["low", "high"]] = None  # 旧版 Gemini 思考深度
-    
+
     def __post_init__(self):
         """从配置文件加载默认值"""
         config = get_config().get("api", {})
-        
+
         # 图像生成 API 配置
         image_config = config.get("image", {})
         if self.image_api_key is None:
@@ -70,7 +70,7 @@ class APIConfig:
             self.image_base_url = image_config.get("base_url", "")
         if self.image_model is None:
             self.image_model = image_config.get("model", "gemini-3-pro-image-preview")
-        
+
         # 文本生成 API 配置
         text_config = config.get("text", {})
         if self.text_api_format is None:
@@ -85,18 +85,18 @@ class APIConfig:
             self.text_thinking = text_config.get("thinking", "disabled")
         if self.text_thinking_level is None:
             self.text_thinking_level = text_config.get("thinking_level")  # 可选
-        
+
         # 如果文本 API 没有单独配置，使用图像 API 的配置
         if not self.text_api_key:
             self.text_api_key = self.image_api_key
         if not self.text_base_url:
             self.text_base_url = self.image_base_url
-    
+
     @property
     def api_key(self) -> str:
         """向后兼容：返回图像 API 密钥"""
         return self.image_api_key
-    
+
     @property
     def base_url(self) -> str:
         """向后兼容：返回图像 API 地址"""
@@ -106,6 +106,7 @@ class APIConfig:
 @dataclass
 class PPTConfig:
     """PPT 生成配置"""
+
     language: str = None
     style: str = None
     target_audience: str = None
@@ -116,7 +117,7 @@ class PPTConfig:
     max_concurrent: int = None
     max_retries: int = None
     retry_delay: float = None
-    
+
     def __post_init__(self):
         """从配置文件加载默认值"""
         config = get_config().get("ppt", {})
@@ -140,13 +141,13 @@ class PPTConfig:
             self.max_retries = config.get("max_retries", 3)
         if self.retry_delay is None:
             self.retry_delay = config.get("retry_delay", 2.0)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return asdict(self)
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'PPTConfig':
+    def from_dict(cls, data: Dict[str, Any]) -> "PPTConfig":
         """从字典创建"""
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
 
@@ -177,7 +178,7 @@ def get_timeout_config() -> Dict[str, int]:
         "text_generation": config.get("text_generation", 120),
         "image_generation": config.get("image_generation", 180),
         "api_call": config.get("api_call", 60),
-        "batch_buffer": config.get("batch_buffer", 60)
+        "batch_buffer": config.get("batch_buffer", 60),
     }
 
 
@@ -186,6 +187,6 @@ def load_sample_material() -> str:
     sample_path = get_sample_file()
     if not sample_path.exists():
         raise FileNotFoundError(f"示例文件不存在: {sample_path}")
-    
-    with open(sample_path, 'r', encoding='utf-8') as f:
+
+    with open(sample_path, "r", encoding="utf-8") as f:
         return f.read()

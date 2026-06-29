@@ -13,15 +13,7 @@ class ImageResultNormalizerTest(unittest.TestCase):
             return png_bytes
 
         result = ImageResultNormalizer(fetcher=fetcher).normalize(
-            {
-                "choices": [
-                    {
-                        "message": {
-                            "content": "![image](https://example.test/slide.png)\n"
-                        }
-                    }
-                ]
-            }
+            {"choices": [{"message": {"content": "![image](https://example.test/slide.png)\n"}}]}
         )
 
         self.assertEqual(result.base64_data, base64.b64encode(png_bytes).decode())
@@ -31,9 +23,7 @@ class ImageResultNormalizerTest(unittest.TestCase):
     def test_accepts_b64_json_from_image_endpoint(self):
         encoded = base64.b64encode(b"image-bytes").decode()
 
-        result = ImageResultNormalizer().normalize(
-            {"data": [{"b64_json": encoded}]}
-        )
+        result = ImageResultNormalizer().normalize({"data": [{"b64_json": encoded}]})
 
         self.assertEqual(result.base64_data, encoded)
         self.assertEqual(result.source, "base64")
@@ -41,9 +31,7 @@ class ImageResultNormalizerTest(unittest.TestCase):
     def test_accepts_data_url(self):
         encoded = base64.b64encode(b"image-bytes").decode()
 
-        result = ImageResultNormalizer().normalize(
-            f"data:image/jpeg;base64,{encoded}"
-        )
+        result = ImageResultNormalizer().normalize(f"data:image/jpeg;base64,{encoded}")
 
         self.assertEqual(result.base64_data, encoded)
         self.assertEqual(result.mime_type, "image/jpeg")

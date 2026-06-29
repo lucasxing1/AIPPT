@@ -76,9 +76,13 @@ class ModelRouter:
         result = self._post_chat(profile, payload)
         return self._write_normalized_image(result, output_path)
 
-    def generate_image_base64(self, prompt: str, aspect_ratio: str = "16:9", quality: str = "2K") -> str:
+    def generate_image_base64(
+        self, prompt: str, aspect_ratio: str = "16:9", quality: str = "2K"
+    ) -> str:
         profile = self.profiles.image
-        result = self._post_chat(profile, self._chat_image_payload(profile, prompt, aspect_ratio, quality))
+        result = self._post_chat(
+            profile, self._chat_image_payload(profile, prompt, aspect_ratio, quality)
+        )
         return self.normalizer.normalize(result).base64_data
 
     def edit_image_base64(

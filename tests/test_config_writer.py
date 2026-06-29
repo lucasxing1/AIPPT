@@ -13,8 +13,10 @@ class ConfigWriterTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
 
-            with patch("src.config_writer.load_yaml_config", return_value={"ppt": {"num_pages": 3}}), \
-                 patch("src.config_writer.reload_config"):
+            with (
+                patch("src.config_writer.load_yaml_config", return_value={"ppt": {"num_pages": 3}}),
+                patch("src.config_writer.reload_config"),
+            ):
                 save_model_profiles_to_config(
                     {
                         "prompt_model": {
@@ -44,14 +46,20 @@ class ConfigWriterTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "config.yaml"
 
-            with patch("src.config_writer.load_yaml_config", return_value={
-                "api": {
-                    "models": {
-                        "prompt_model": {"api_key": "old-text-key"},
-                        "image_model": {"api_key": "old-image-key"},
-                    }
-                }
-            }), patch("src.config_writer.reload_config"):
+            with (
+                patch(
+                    "src.config_writer.load_yaml_config",
+                    return_value={
+                        "api": {
+                            "models": {
+                                "prompt_model": {"api_key": "old-text-key"},
+                                "image_model": {"api_key": "old-image-key"},
+                            }
+                        }
+                    },
+                ),
+                patch("src.config_writer.reload_config"),
+            ):
                 save_model_profiles_to_config(
                     {
                         "prompt_model": {

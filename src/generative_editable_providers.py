@@ -994,6 +994,11 @@ def _post_openai_chat(
 
 
 def _is_retryable_transport_exception(exc: Exception) -> bool:
+    if isinstance(exc, requests.HTTPError):
+        status_code = exc.response.status_code if exc.response is not None else 0
+        return status_code == 429 or status_code >= 500
+    if isinstance(exc, requests.RequestException):
+        return True
     if isinstance(exc, http.client.IncompleteRead):
         return True
     text = f"{type(exc).__name__}: {exc}".lower()
@@ -1006,6 +1011,10 @@ def _is_retryable_transport_exception(exc: Exception) -> bool:
             "connection reset",
             "protocolerror",
             "remote end closed",
+            "sslerror",
+            "unexpected_eof",
+            "eof occurred",
+            "max retries exceeded",
         )
     )
 
@@ -1975,10 +1984,16 @@ def _write_normalized_provider_image(
             secret_values=[config.api_key, config.base_url],
         ) from exc
     except Exception as exc:
+        status_code = (
+            exc.response.status_code
+            if isinstance(exc, requests.HTTPError) and exc.response is not None
+            else None
+        )
         raise ProviderError(
             provider_role=config.role,
             operation=operation,
             message=str(exc),
-            retryable=False,
-            secret_values=[config.api_key],
+            retryable=_is_retryable_transport_exception(exc),
+            secret_values=[config.api_key, config.base_url],
+            status_code=status_code,
         ) from exc

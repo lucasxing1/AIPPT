@@ -295,6 +295,46 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertEqual(issue.details["target_id"], "asset")
         self.assertEqual(issue.details["asset_ref"], "assets/0000-slide-a/asset.png")
 
+    def test_structural_validation_allows_vlm_bbox_source_preserved_crop_assets(self):
+        from src.generative_editable_composer import compose_deck_from_manifests
+        from src.generative_editable_preview_validator import validate_composed_deck_structure
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, page = self._write_validation_fixture(root)
+            source_preserved_path = root / "assets" / "0000-slide-a" / "asset.source-preserved.png"
+            source_preserved_path.write_bytes(
+                (root / "assets" / "0000-slide-a" / "asset.png").read_bytes()
+            )
+            unsafe_page = replace(
+                page,
+                bitmap_assets=[
+                    replace(
+                        page.bitmap_assets[0],
+                        asset_path="assets/0000-slide-a/asset.source-preserved.png",
+                        provenance={
+                            "asset_strategy": "source_preserved_crop",
+                            "asset_sheet_provider_failed": True,
+                        },
+                    )
+                ],
+            )
+            write_manifest(root / "pages" / "0000-slide-a.json", unsafe_page)
+            output = root / "source-preserved-provider-failed.pptx"
+            compose_deck_from_manifests(root / "deck.json", root, output)
+
+            report = validate_composed_deck_structure(
+                deck_manifest_path=root / "deck.json",
+                artifact_root=root,
+                pptx_path=output,
+            )
+
+        self.assertEqual(report.status, "passed")
+        self.assertNotIn(
+            "forbidden_source_crop_bitmap_asset",
+            [issue.code for issue in report.issues],
+        )
+
     def test_structural_validation_reports_unsafe_full_slide_source_with_text(self):
         from src.generative_editable_composer import compose_deck_from_manifests
         from src.generative_editable_preview_validator import validate_composed_deck_structure

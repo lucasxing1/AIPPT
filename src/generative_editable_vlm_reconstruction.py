@@ -470,6 +470,7 @@ def _validate_vlm_pipeline_output(
 ) -> ValidationReport:
     reports = [
         _validate_vlm_minimum_editable_structure(page_manifests),
+        _validate_vlm_source_preserved_bitmap_coverage(page_manifests),
         dependencies.structure_validator(
             deck_manifest_path=deck_manifest_path,
             artifact_root=artifact_root,
@@ -495,6 +496,165 @@ def _validate_vlm_pipeline_output(
             )
         )
     return _merge_validation_reports(reports, checked_pages=len(page_manifests))
+
+
+def _validate_vlm_source_preserved_bitmap_coverage(page_manifests: list[PageManifest]) -> ValidationReport:
+    issues: list[ValidationIssue] = []
+    for page in page_manifests:
+        issues.extend(_vlm_source_preserved_bitmap_coverage_issues(page))
+    return ValidationReport(
+        status="failed" if any(issue.severity == "error" for issue in issues) else "passed",
+        checked_pages=len(page_manifests),
+        issues=issues,
+    )
+
+
+def _vlm_source_preserved_bitmap_coverage_issues(page: PageManifest) -> list[ValidationIssue]:
+    source_width, source_height = page.source_image_size
+    page_area = max(1, int(source_width) * int(source_height))
+    if page_area <= 1:
+        return []
+    source_preserved_assets = [
+        asset for asset in page.bitmap_assets if _is_vlm_source_preserved_bitmap_asset(asset)
+    ]
+    if not source_preserved_assets:
+        return []
+    largest_asset = max(
+        source_preserved_assets,
+        key=lambda asset: _vlm_source_preserved_asset_effective_area_ratio(
+            asset,
+            (int(source_width), int(source_height)),
+        ),
+    )
+    largest_ratio = _vlm_source_preserved_asset_effective_area_ratio(
+        largest_asset,
+        (int(source_width), int(source_height)),
+    )
+    largest_bbox_ratio = _bbox_area(largest_asset.source_pixel_bbox) / float(page_area)
+    combined_bbox_ratio = _combined_bbox_coverage_ratio(
+        [asset.source_pixel_bbox for asset in source_preserved_assets],
+        (int(source_width), int(source_height)),
+    )
+    combined_visible_ratio = min(
+        1.0,
+        sum(
+            _vlm_source_preserved_asset_effective_area_ratio(
+                asset,
+                (int(source_width), int(source_height)),
+            )
+            for asset in source_preserved_assets
+        ),
+    )
+    combined_ratio = min(combined_bbox_ratio, combined_visible_ratio)
+    structure_count = len(page.text_boxes) + len(page.native_shapes)
+    details = {
+        "largest_asset_id": largest_asset.asset_id,
+        "largest_asset_area_ratio": round(largest_ratio, 4),
+        "largest_asset_bbox_area_ratio": round(largest_bbox_ratio, 4),
+        "combined_bitmap_asset_coverage_ratio": round(combined_ratio, 4),
+        "combined_bitmap_asset_bbox_coverage_ratio": round(combined_bbox_ratio, 4),
+        "combined_bitmap_asset_visible_area_ratio": round(combined_visible_ratio, 4),
+        "bitmap_asset_count": len(page.bitmap_assets),
+        "source_preserved_bitmap_asset_count": len(source_preserved_assets),
+        "native_shape_count": len(page.native_shapes),
+        "text_box_count": len(page.text_boxes),
+        "page_index": page.page_index,
+    }
+    if largest_ratio >= 0.80:
+        return [
+            ValidationIssue(
+                code="oversized_bitmap_asset_coverage",
+                message="A single source-preserved bitmap asset covers most of the slide",
+                slide_id=page.slide_id,
+                severity="error",
+                details=details,
+            )
+        ]
+    if combined_ratio >= 0.85 and structure_count < 3:
+        return [
+            ValidationIssue(
+                code="excessive_bitmap_asset_coverage",
+                message="Source-preserved bitmap assets cover most of the slide without enough editable structure",
+                slide_id=page.slide_id,
+                severity="error",
+                details=details,
+            )
+        ]
+    if combined_ratio >= 0.65 and not _has_vlm_split_bitmap_structure(
+        source_preserved_assets,
+        largest_ratio=largest_ratio,
+        structure_count=structure_count,
+    ):
+        return [
+            ValidationIssue(
+                code="high_bitmap_asset_coverage",
+                message="Source-preserved bitmap assets cover a large part of the slide",
+                slide_id=page.slide_id,
+                severity="error",
+                details=details,
+            )
+        ]
+    return []
+
+
+def _is_vlm_source_preserved_bitmap_asset(asset: BitmapAssetSpec) -> bool:
+    return asset.provenance.get("asset_strategy") in {
+        "masked_source_element",
+        "source_preserved_crop",
+        "source_preserving_anchor",
+    } or asset.provenance.get("source_type") == "vlm_source_crop"
+
+
+def _vlm_source_preserved_asset_effective_area_ratio(
+    asset: BitmapAssetSpec,
+    source_size: tuple[int, int],
+) -> float:
+    visible_ratio = asset.provenance.get("alpha_visible_area_ratio")
+    if (
+        asset.provenance.get("background_difference_alpha") is True
+        and isinstance(visible_ratio, (int, float))
+        and 0.0 <= float(visible_ratio) <= 1.0
+    ):
+        return float(visible_ratio)
+    page_area = max(1, source_size[0] * source_size[1])
+    return _bbox_area(asset.source_pixel_bbox) / float(page_area)
+
+
+def _has_vlm_split_bitmap_structure(
+    source_preserved_assets: list[BitmapAssetSpec],
+    *,
+    largest_ratio: float,
+    structure_count: int,
+) -> bool:
+    split_row_structure = (
+        len(source_preserved_assets) >= 3
+        and largest_ratio <= 0.35
+        and structure_count >= 3
+    )
+    dense_infographic_structure = (
+        len(source_preserved_assets) >= 3
+        and largest_ratio <= 0.60
+        and structure_count >= 12
+    )
+    return split_row_structure or dense_infographic_structure
+
+
+def _combined_bbox_coverage_ratio(
+    bboxes: list[PixelBBox],
+    source_size: tuple[int, int],
+) -> float:
+    width, height = source_size
+    if width <= 0 or height <= 0:
+        return 0.0
+    mask = Image.new("L", (width, height), 0)
+    draw = ImageDraw.Draw(mask)
+    for bbox in bboxes:
+        left, top, right, bottom = _clamp_bbox(bbox, source_size)
+        if right > left and bottom > top:
+            draw.rectangle((left, top, right, bottom), fill=255)
+    histogram = mask.histogram()
+    covered = width * height - histogram[0]
+    return covered / float(width * height)
 
 
 def _validate_vlm_minimum_editable_structure(page_manifests: list[PageManifest]) -> ValidationReport:
@@ -1137,7 +1297,20 @@ def _resolve_text_boxes_with_vlm_gate(
             )
         )
     if not analysis.text_regions:
-        return []
+        reliable_ocr_boxes = [
+            _ocr_text_with_ocr_layout(box)
+            for box in ocr_text_boxes
+            if _ocr_box_is_reliable_without_vlm_text_region(box)
+        ]
+        if not _ocr_only_text_fallback_is_sane(reliable_ocr_boxes, source_image_size):
+            return []
+        return _dedupe_overlapping_text_boxes(
+            _avoid_bitmap_text_overlap(
+                reliable_ocr_boxes,
+                bitmap_assets,
+                source_image_size,
+            )
+        )
 
     resolved: list[TextBoxSpec] = []
     used_indexes: set[int] = set()
@@ -1227,6 +1400,39 @@ def _vlm_fallback_is_already_represented(
         if _text_boxes_are_nearby_ocr_vlm_duplicates(existing, vlm_box):
             return True
     return False
+
+
+def _ocr_box_is_reliable_without_vlm_text_region(box: TextBoxSpec) -> bool:
+    text = _normalize_text_for_match(box.text)
+    if not text:
+        return False
+    confidence = float(box.provenance.get("ocr_confidence", 0.0) or 0.0)
+    if confidence >= 0.85:
+        return True
+    return confidence >= 0.75 and len(text) >= 4
+
+
+def _ocr_only_text_fallback_is_sane(
+    boxes: list[TextBoxSpec],
+    source_image_size: tuple[int, int],
+) -> bool:
+    if not boxes:
+        return True
+    if len(boxes) > 40:
+        return False
+    normalized_lengths = [len(_normalize_text_for_match(box.text)) for box in boxes]
+    if len(boxes) > 20 and sum(1 for length in normalized_lengths if length <= 1) / len(boxes) >= 0.65:
+        return False
+    page_area = max(1, int(source_image_size[0]) * int(source_image_size[1]))
+    combined_bbox_ratio = _combined_bbox_coverage_ratio(
+        [box.source_pixel_bbox for box in boxes],
+        source_image_size,
+    )
+    summed_text_area_ratio = min(
+        1.0,
+        sum(_bbox_area(box.source_pixel_bbox) for box in boxes) / float(page_area),
+    )
+    return combined_bbox_ratio <= 0.55 and summed_text_area_ratio <= 0.35
 
 
 def _vlm_text_should_stay_baked_into_bitmap(

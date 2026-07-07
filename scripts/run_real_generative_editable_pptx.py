@@ -102,6 +102,12 @@ def main(argv: list[str] | None = None) -> int:
         default=-1.0,
         help="override provider retry backoff seconds for gates; negative keeps zero backoff",
     )
+    gates_parser.add_argument(
+        "--gate-wall-timeout",
+        type=int,
+        default=0,
+        help="wall-clock timeout in seconds for each provider gate; 0 runs gates in-process",
+    )
 
     run_parser = subparsers.add_parser("run", help="run the editable PPTX pipeline")
     _add_common_args(run_parser)
@@ -200,6 +206,10 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
 
 def _run_gates(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     images = _resolve_input_images(args)
+    requested = _requested_gates(args.provider_gate)
+    gate_wall_timeout = int(getattr(args, "gate_wall_timeout", 0) or 0)
+    if gate_wall_timeout > 0:
+        return _run_gates_with_wall_timeout(args, output_dir, images, requested, gate_wall_timeout)
     dependencies = _gate_dependencies(
         use_fake=args.use_fake,
         provider_timeout=args.provider_timeout,
@@ -207,7 +217,6 @@ def _run_gates(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         provider_retry_backoff_seconds=getattr(args, "provider_retry_backoff", -1.0),
     )
     config = load_generative_editable_config(use_fake=args.use_fake)
-    requested = _requested_gates(args.provider_gate)
     gates = []
     for gate in requested:
         gate_dependencies = dependencies["vlm"] if gate == "vlm_analysis" else dependencies["legacy"]
@@ -223,6 +232,78 @@ def _run_gates(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     report_path = output_dir / "provider-gates.json"
     _write_json(report_path, report)
     return {"status": status, "report_path": str(report_path), "gates": gates}
+
+
+def _run_gates_with_wall_timeout(
+    args: argparse.Namespace,
+    output_dir: Path,
+    images: list[Path],
+    requested: list[str],
+    gate_wall_timeout: int,
+) -> dict[str, Any]:
+    config = load_generative_editable_config(use_fake=args.use_fake)
+    gates: list[dict[str, Any]] = []
+    for gate in requested:
+        gate_dir = output_dir / f"gate-{gate}"
+        gate_dir.mkdir(parents=True, exist_ok=True)
+        command = [
+            sys.executable,
+            str(Path(__file__).resolve()),
+            "gates",
+            "--input-images",
+            *[str(path) for path in images],
+            "--output-dir",
+            str(gate_dir),
+            "--provider-gate",
+            gate,
+            "--aspect-ratio",
+            args.aspect_ratio,
+            "--provider-timeout",
+            str(args.provider_timeout),
+            "--provider-max-attempts",
+            str(getattr(args, "provider_max_attempts", 0)),
+            "--provider-retry-backoff",
+            str(getattr(args, "provider_retry_backoff", -1.0)),
+        ]
+        if args.use_fake:
+            command.append("--use-fake")
+        child_result = _run_subprocess_json(
+            command,
+            timeout_seconds=gate_wall_timeout,
+            report_path=gate_dir / "provider-gates.json",
+            timeout_payload={
+                "gate": gate,
+                "status": "failed",
+                "error_type": "TimeoutExpired",
+                "error": f"provider gate exceeded wall-clock timeout_seconds={gate_wall_timeout}",
+                "timeout_seconds": gate_wall_timeout,
+            },
+        )
+        gates.append(_extract_gate_result(gate, child_result))
+    status = "passed" if all(item["status"] == "passed" for item in gates) else "failed"
+    report = {
+        "status": status,
+        "input_images": [str(path) for path in images],
+        "output_dir": str(output_dir),
+        "config": _redacted_config_summary(config),
+        "gate_wall_timeout": gate_wall_timeout,
+        "gates": gates,
+    }
+    report_path = output_dir / "provider-gates.json"
+    _write_json(report_path, report)
+    return {"status": status, "report_path": str(report_path), "gates": gates}
+
+
+def _extract_gate_result(gate: str, child_result: dict[str, Any]) -> dict[str, Any]:
+    child_gates = child_result.get("gates")
+    if isinstance(child_gates, list) and child_gates:
+        first = child_gates[0]
+        if isinstance(first, dict):
+            return first
+    payload = dict(child_result)
+    payload.setdefault("gate", gate)
+    payload.setdefault("status", "failed")
+    return payload
 
 
 def _run_one_gate(
@@ -664,6 +745,7 @@ def _run_subprocess_json(
                 "error": "child process did not print a JSON result",
                 "returncode": process.returncode,
             }
+            _add_subprocess_output_tails(result, stdout=stdout, stderr=stderr)
         if process.returncode != 0 and result.get("status") == "passed":
             result = {
                 **result,
@@ -671,6 +753,7 @@ def _run_subprocess_json(
                 "error_type": "SubprocessFailed",
                 "returncode": process.returncode,
             }
+            _add_subprocess_output_tails(result, stdout=stdout, stderr=stderr)
         if not report_path.exists():
             _write_json(report_path, result)
         return result
@@ -693,12 +776,28 @@ def _run_subprocess_json(
             **timeout_payload,
             "status": "failed",
             "error_type": "TimeoutExpired",
-            "error": f"child process exceeded wall-clock timeout_seconds={timeout_seconds}",
+            "error": timeout_payload.get(
+                "error",
+                f"child process exceeded wall-clock timeout_seconds={timeout_seconds}",
+            ),
             "timeout_seconds": timeout_seconds,
         }
         result = _augment_timeout_result_from_artifacts(result)
         _write_json(report_path, result)
         return result
+
+
+def _add_subprocess_output_tails(
+    result: dict[str, Any],
+    *,
+    stdout: str,
+    stderr: str,
+    max_chars: int = 2000,
+) -> None:
+    if stdout:
+        result["stdout_tail"] = safe_provider_error_message(stdout[-max_chars:])
+    if stderr:
+        result["stderr_tail"] = safe_provider_error_message(stderr[-max_chars:])
 
 
 def _read_existing_report(report_path: Path) -> dict[str, Any] | None:
@@ -1463,7 +1562,7 @@ def _bitmap_asset_coverage_issues(
         issues.append(
             {
                 "code": "high_bitmap_asset_coverage",
-                "severity": "warning",
+                "severity": "error",
                 "page": page_number,
                 "slide_id": page.slide_id,
                 "message": "Source-preserved bitmap assets cover a large part of the slide",

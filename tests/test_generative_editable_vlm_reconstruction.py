@@ -15,6 +15,93 @@ from src.generative_editable_providers import ProviderError
 
 
 class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
+    def test_vlm_validation_fails_large_source_preserved_bitmap_coverage_without_runner(self):
+        from src.generative_editable_manifest import BitmapAssetSpec, PageManifest
+        from src.generative_editable_vlm_reconstruction import _validate_vlm_source_preserved_bitmap_coverage
+
+        page = PageManifest(
+            slide_id="slide-a",
+            page_index=0,
+            source_image_path="sources/slide-a.png",
+            source_image_size=(1000, 500),
+            slide_size=(10.0, 5.0),
+            bitmap_assets=[
+                BitmapAssetSpec(
+                    asset_id="huge-source-preserved-crop",
+                    source_pixel_bbox=(0, 0, 850, 500),
+                    asset_path="assets/huge-source-preserved-crop.png",
+                    z_order=1,
+                    provenance={"asset_strategy": "source_preserved_crop"},
+                )
+            ],
+        )
+
+        report = _validate_vlm_source_preserved_bitmap_coverage([page])
+
+        self.assertEqual(report.status, "failed")
+        self.assertEqual(report.issues[0].code, "oversized_bitmap_asset_coverage")
+
+    def test_vlm_validation_allows_split_row_source_preserved_bitmap_structure(self):
+        from src.generative_editable_manifest import BitmapAssetSpec, NativeShapeSpec, PageManifest, TextBoxSpec
+        from src.generative_editable_vlm_reconstruction import _validate_vlm_source_preserved_bitmap_coverage
+
+        page = PageManifest(
+            slide_id="slide-a",
+            page_index=0,
+            source_image_path="sources/slide-a.png",
+            source_image_size=(1000, 500),
+            slide_size=(10.0, 5.0),
+            text_boxes=[
+                TextBoxSpec(
+                    text="标题",
+                    source_pixel_bbox=(40, 20, 160, 60),
+                    source_pixel_polygon=((40, 20), (160, 20), (160, 60), (40, 60)),
+                )
+            ],
+            native_shapes=[
+                NativeShapeSpec(
+                    shape_type="line",
+                    source_pixel_bbox=(20, 80, 980, 82),
+                    line_start=(20, 80),
+                    line_end=(980, 80),
+                ),
+                NativeShapeSpec(
+                    shape_type="line",
+                    source_pixel_bbox=(20, 240, 980, 242),
+                    line_start=(20, 240),
+                    line_end=(980, 240),
+                ),
+            ],
+            bitmap_assets=[
+                BitmapAssetSpec(
+                    asset_id="row-a",
+                    source_pixel_bbox=(0, 0, 1000, 150),
+                    asset_path="assets/row-a.png",
+                    z_order=1,
+                    provenance={"asset_strategy": "source_preserved_crop", "alpha_visible_area_ratio": 0.12},
+                ),
+                BitmapAssetSpec(
+                    asset_id="row-b",
+                    source_pixel_bbox=(0, 170, 1000, 320),
+                    asset_path="assets/row-b.png",
+                    z_order=2,
+                    provenance={"asset_strategy": "source_preserved_crop", "alpha_visible_area_ratio": 0.12},
+                ),
+                BitmapAssetSpec(
+                    asset_id="row-c",
+                    source_pixel_bbox=(0, 340, 1000, 490),
+                    asset_path="assets/row-c.png",
+                    z_order=3,
+                    provenance={"asset_strategy": "source_preserved_crop", "alpha_visible_area_ratio": 0.12},
+                ),
+            ],
+        )
+
+        report = _validate_vlm_source_preserved_bitmap_coverage([page])
+
+        self.assertEqual(report.status, "passed")
+        self.assertEqual(report.issues, [])
+
     def test_vlm_pipeline_runs_structure_and_preview_validation_before_returning(self):
         from src.generative_editable_preview_validator import ValidationReport
         from src.generative_editable_vlm_reconstruction import (
@@ -1776,7 +1863,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual([box.text for box in page.text_boxes], ["Livis版800V主动悬架"])
         self.assertEqual(page.text_boxes[0].source_pixel_bbox, (1292, 540, 1502, 563))
 
-    def test_without_vlm_text_regions_ocr_is_not_spread_across_page(self):
+    def test_without_vlm_text_regions_uses_high_confidence_ocr_boxes(self):
         from src.generative_editable_manifest import TextBoxSpec
         from src.generative_editable_vlm_reconstruction import (
             build_page_manifest_from_vlm_analysis,
@@ -1825,8 +1912,62 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 text_boxes=ocr_boxes,
             )
 
-        self.assertEqual(page.text_boxes, [])
+        self.assertEqual([box.text for box in page.text_boxes], [f"OCR {index}" for index in range(5)])
+        self.assertTrue(
+            all(box.provenance.get("layout_source") == "ocr" for box in page.text_boxes)
+        )
         self.assertEqual(page.provenance["vlm_counts"]["text_regions"], 0)
+
+    def test_without_vlm_text_regions_rejects_dense_short_ocr_noise(self):
+        from src.generative_editable_manifest import TextBoxSpec
+        from src.generative_editable_vlm_reconstruction import (
+            build_page_manifest_from_vlm_analysis,
+            coerce_vlm_analysis,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            Image.new("RGB", (240, 120), "#001122").save(source)
+            Image.new("RGB", (240, 120), "#001122").save(background)
+            analysis = coerce_vlm_analysis(
+                {
+                    "coordinate_space": {"width": 240, "height": 120, "unit": "px"},
+                    "text_regions": [],
+                    "bitmap_regions": [],
+                    "shape_regions": [],
+                }
+            )
+            ocr_boxes = [
+                TextBoxSpec(
+                    text="x",
+                    source_pixel_bbox=(5 + (index % 20) * 11, 5 + (index // 20) * 10, 12 + (index % 20) * 11, 12 + (index // 20) * 10),
+                    source_pixel_polygon=(
+                        (5 + (index % 20) * 11, 5 + (index // 20) * 10),
+                        (12 + (index % 20) * 11, 5 + (index // 20) * 10),
+                        (12 + (index % 20) * 11, 12 + (index // 20) * 10),
+                        (5 + (index % 20) * 11, 12 + (index // 20) * 10),
+                    ),
+                    provenance={"content_source": "ocr", "ocr_confidence": 0.99},
+                )
+                for index in range(60)
+            ]
+
+            page = build_page_manifest_from_vlm_analysis(
+                analysis=analysis,
+                slide_id="slide-a",
+                page_index=0,
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                aspect_ratio="16:9",
+                text_boxes=ocr_boxes,
+            )
+
+        self.assertEqual(page.text_boxes, [])
 
     def test_openai_chat_vlm_provider_requests_compact_json_from_gateway_friendly_image(self):
         from src.generative_editable_vlm_reconstruction import OpenAIChatVLMPageAnalysisProvider
@@ -2200,7 +2341,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertGreaterEqual(shape_types.count(MSO_SHAPE_TYPE.PICTURE), 1)
         self.assertIn(MSO_SHAPE_TYPE.LINE, shape_types)
 
-    def test_vlm_pipeline_falls_back_to_source_crops_when_asset_sheet_provider_fails(self):
+    def test_vlm_pipeline_rejects_asset_sheet_provider_failure_source_crops(self):
         from pptx import Presentation
         from pptx.enum.shapes import MSO_SHAPE_TYPE
 
@@ -2862,7 +3003,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             mask = Image.open(job_dir / "assets" / "0000-slide-a" / "vlm-text-bitmap-mask.png")
 
         self.assertEqual(len(ocr_provider.calls), 1)
-        self.assertEqual(page.text_boxes, [])
+        self.assertEqual([box.text for box in page.text_boxes], ["OCR 正文"])
+        self.assertEqual(page.text_boxes[0].provenance["layout_source"], "ocr")
         self.assertIn("ocr", page.provider_output_paths)
         self.assertEqual(mask.getpixel((25, 25)), 255)
 

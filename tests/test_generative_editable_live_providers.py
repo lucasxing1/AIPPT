@@ -583,6 +583,100 @@ class LiveProviderAdapterTest(unittest.TestCase):
         self.assertNotIn("secret-key", str(ctx.exception))
         self.assertIn("[URL_REDACTED]", str(ctx.exception))
 
+    def test_openai_chat_image_edit_marks_download_ssl_eof_as_retryable(self):
+        payload = {"choices": [{"message": {"content": "https://signed.example/image.png?token=secret-key"}}]}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.png"
+            Image.new("RGB", (32, 18), "white").save(source)
+            request = ImageEditRequest(
+                source_image_path=str(source),
+                prompt_id="base_clean_background",
+                prompt="remove text",
+                output_asset_path="assets/out.png",
+                asset_root=str(root),
+            )
+
+            with patch("src.generative_editable_providers.requests.post") as post:
+                post.return_value = _FakeResponse(payload)
+                with patch("src.image_result.requests.get") as get:
+                    get.side_effect = requests.exceptions.SSLError(
+                        "HTTPSConnectionPool(host='signed.example', port=443): "
+                        "Max retries exceeded with url: /image.png "
+                        "(Caused by SSLError(SSLEOFError(8, "
+                        "'[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol')))"
+                    )
+                    with self.assertRaises(ProviderError) as ctx:
+                        OpenAIChatImageEditProvider(
+                            _provider(role="edit_model", model="edit-model", provider="openai_image_edit")
+                        ).edit(request)
+
+        self.assertTrue(ctx.exception.retryable)
+        self.assertNotIn("secret-key", str(ctx.exception))
+        self.assertIn("[URL_REDACTED]", str(ctx.exception))
+
+    def test_openai_chat_image_edit_marks_download_http_404_as_non_retryable(self):
+        payload = {"choices": [{"message": {"content": "https://signed.example/missing.png?token=secret-key"}}]}
+        response = requests.Response()
+        response.status_code = 404
+        error = requests.HTTPError("404 Client Error", response=response)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.png"
+            Image.new("RGB", (32, 18), "white").save(source)
+            request = ImageEditRequest(
+                source_image_path=str(source),
+                prompt_id="base_clean_background",
+                prompt="remove text",
+                output_asset_path="assets/out.png",
+                asset_root=str(root),
+            )
+
+            with patch("src.generative_editable_providers.requests.post") as post:
+                post.return_value = _FakeResponse(payload)
+                with patch("src.image_result.requests.get") as get:
+                    get.return_value.raise_for_status.side_effect = error
+                    with self.assertRaises(ProviderError) as ctx:
+                        OpenAIChatImageEditProvider(
+                            _provider(role="edit_model", model="edit-model", provider="openai_image_edit")
+                        ).edit(request)
+
+        self.assertFalse(ctx.exception.retryable)
+        self.assertEqual(ctx.exception.status_code, 404)
+        self.assertNotIn("secret-key", str(ctx.exception))
+
+    def test_openai_chat_image_edit_marks_download_http_503_as_retryable(self):
+        payload = {"choices": [{"message": {"content": "https://signed.example/temporary.png"}}]}
+        response = requests.Response()
+        response.status_code = 503
+        error = requests.HTTPError("503 Server Error", response=response)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.png"
+            Image.new("RGB", (32, 18), "white").save(source)
+            request = ImageEditRequest(
+                source_image_path=str(source),
+                prompt_id="base_clean_background",
+                prompt="remove text",
+                output_asset_path="assets/out.png",
+                asset_root=str(root),
+            )
+
+            with patch("src.generative_editable_providers.requests.post") as post:
+                post.return_value = _FakeResponse(payload)
+                with patch("src.image_result.requests.get") as get:
+                    get.return_value.raise_for_status.side_effect = error
+                    with self.assertRaises(ProviderError) as ctx:
+                        OpenAIChatImageEditProvider(
+                            _provider(role="edit_model", model="edit-model", provider="openai_image_edit")
+                        ).edit(request)
+
+        self.assertTrue(ctx.exception.retryable)
+        self.assertEqual(ctx.exception.status_code, 503)
+
     def test_openai_chat_image_generation_provider_writes_normalized_image(self):
         image_base64 = base64.b64encode(_png_bytes()).decode()
         payload = {"choices": [{"message": {"content": f"data:image/png;base64,{image_base64}"}}]}

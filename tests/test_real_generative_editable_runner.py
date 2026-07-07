@@ -943,6 +943,65 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
         self.assertEqual(gate["provider_attempts"][0]["provider_error_code"], "upstream_timeout")
         self.assertNotIn("secret", json.dumps(gate["provider_attempts"], ensure_ascii=False))
 
+    def test_provider_gates_can_run_each_gate_with_wall_timeout(self):
+        import scripts.run_real_generative_editable_pptx as runner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "slide.png"
+            Image.new("RGB", (800, 450), "#FFFFFF").save(source)
+            calls = []
+
+            def fake_subprocess(command, *, timeout_seconds, report_path, timeout_payload):
+                calls.append(
+                    {
+                        "command": command,
+                        "timeout_seconds": timeout_seconds,
+                        "report_path": report_path,
+                        "timeout_payload": timeout_payload,
+                    }
+                )
+                return {
+                    **timeout_payload,
+                    "status": "failed",
+                    "error_type": "TimeoutExpired",
+                    "timeout_seconds": timeout_seconds,
+                }
+
+            stdout = io.StringIO()
+            with patch.object(runner, "_run_subprocess_json", side_effect=fake_subprocess), redirect_stdout(stdout):
+                exit_code = main(
+                    [
+                        "gates",
+                        "--use-fake",
+                        "--input-images",
+                        str(source),
+                        "--output-dir",
+                        str(root / "out"),
+                        "--provider-gate",
+                        "image_generation",
+                        "--provider-timeout",
+                        "5",
+                        "--provider-max-attempts",
+                        "2",
+                        "--provider-retry-backoff",
+                        "0",
+                        "--gate-wall-timeout",
+                        "1",
+                    ]
+                )
+            report = json.loads((root / "out" / "provider-gates.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(exit_code, 1)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0]["timeout_seconds"], 1)
+        command = calls[0]["command"]
+        self.assertIn("--provider-gate", command)
+        self.assertEqual(command[command.index("--provider-gate") + 1], "image_generation")
+        self.assertNotIn("--gate-wall-timeout", command)
+        self.assertEqual(report["gates"][0]["gate"], "image_generation")
+        self.assertEqual(report["gates"][0]["error_type"], "TimeoutExpired")
+
     def test_provider_gates_can_run_vlm_analysis_gate(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1078,6 +1137,50 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
         self.assertEqual(result["error_type"], "TimeoutExpired")
         self.assertEqual(report["stage"], "test")
         self.assertEqual(report["error_type"], "TimeoutExpired")
+
+    def test_subprocess_json_runner_preserves_custom_timeout_error(self):
+        import scripts.run_real_generative_editable_pptx as runner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            report_path = root / "report.json"
+
+            result = runner._run_subprocess_json(
+                [sys.executable, "-c", "import time; time.sleep(2)"],
+                timeout_seconds=1,
+                report_path=report_path,
+                timeout_payload={
+                    "status": "failed",
+                    "stage": "provider_gate",
+                    "error": "provider gate exceeded wall-clock timeout_seconds=1",
+                },
+            )
+
+        self.assertEqual(result["error_type"], "TimeoutExpired")
+        self.assertEqual(result["error"], "provider gate exceeded wall-clock timeout_seconds=1")
+
+    def test_subprocess_json_runner_includes_redacted_stderr_when_child_prints_no_json(self):
+        import scripts.run_real_generative_editable_pptx as runner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            report_path = root / "report.json"
+
+            result = runner._run_subprocess_json(
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stderr.write('boom api_key=secret-key\\n')",
+                ],
+                timeout_seconds=5,
+                report_path=report_path,
+                timeout_payload={"status": "failed", "stage": "test"},
+            )
+
+        self.assertEqual(result["error_type"], "SubprocessOutputError")
+        self.assertIn("stderr_tail", result)
+        self.assertIn("[REDACTED]", result["stderr_tail"])
+        self.assertNotIn("secret-key", result["stderr_tail"])
 
     def test_subprocess_timeout_report_includes_existing_pptx_object_stats(self):
         import scripts.run_real_generative_editable_pptx as runner
@@ -2063,7 +2166,7 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             )
 
         self.assertEqual(issues[0]["code"], "high_bitmap_asset_coverage")
-        self.assertEqual(issues[0]["severity"], "warning")
+        self.assertEqual(issues[0]["severity"], "error")
 
     def test_reconstruction_issues_allow_split_row_level_bitmap_assets(self):
         import scripts.run_real_generative_editable_pptx as runner

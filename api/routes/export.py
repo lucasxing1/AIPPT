@@ -200,6 +200,10 @@ def _export_generative_editable_pptx(
         slide_order=slide_order,
     )
     ordered_image_paths = [slide.image_path for slide in slide_inputs]
+    if config.reconstruction_mode != "vlm_first":
+        raise GenerativeEditableConfigError(
+            "VLM-first reconstruction is required for generative_editable_pptx export"
+        )
     fallback_factory = None
     if fallback_policy == "raster_pptx":
         fallback_factory = lambda: _export_raster_pptx_fallback(
@@ -215,36 +219,23 @@ def _export_generative_editable_pptx(
         )
 
     try:
-        if config.reconstruction_mode == "vlm_first":
-            try:
-                return run_vlm_editable_pptx_pipeline(
-                    slides=slide_inputs,
-                    output_path=output_path,
-                    artifact_root=str(artifact_root),
-                    job_id=job_id,
-                    dependencies=_build_vlm_editable_pipeline_dependencies(config),
-                    aspect_ratio=aspect_ratio,
-                    cleanup_artifacts=fallback_policy == "fail",
-                )
-            except GenerativeEditableValidationError as exc:
-                return finalize_validated_export(
-                    validation_report=exc.validation_report,
-                    output_path=output_path,
-                    fallback_policy=fallback_policy,
-                    fallback_output_factory=fallback_factory,
-                )
-        return run_generative_editable_pipeline(
-            slides=slide_inputs,
-            output_path=output_path,
-            artifact_root=str(artifact_root),
-            job_id=job_id,
-            dependencies=_build_generative_editable_pipeline_dependencies(),
-            aspect_ratio=aspect_ratio,
-            fallback_policy=fallback_policy,
-            fallback_output_factory=fallback_factory,
-            max_page_concurrency=1,
-            cleanup_artifacts=True,
-        )
+        try:
+            return run_vlm_editable_pptx_pipeline(
+                slides=slide_inputs,
+                output_path=output_path,
+                artifact_root=str(artifact_root),
+                job_id=job_id,
+                dependencies=_build_vlm_editable_pipeline_dependencies(config),
+                aspect_ratio=aspect_ratio,
+                cleanup_artifacts=fallback_policy == "fail",
+            )
+        except GenerativeEditableValidationError as exc:
+            return finalize_validated_export(
+                validation_report=exc.validation_report,
+                output_path=output_path,
+                fallback_policy=fallback_policy,
+                fallback_output_factory=fallback_factory,
+            )
     except Exception:
         Path(output_path).unlink(missing_ok=True)
         raise

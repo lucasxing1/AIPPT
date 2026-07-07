@@ -1,11 +1,12 @@
 import asyncio
+import base64
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from PIL import Image
+from PIL import Image, ImageDraw
 from fastapi import HTTPException
 
 from api.models import ExportRequest, ExportSlide
@@ -13,9 +14,25 @@ import api.routes.export as export_route
 
 
 def _slide_base64() -> str:
-    from tests.test_generative_editable_export_contract import _slide_base64 as make_slide
+    with tempfile.TemporaryDirectory() as tmp:
+        image_path = Path(tmp) / "slide.png"
+        _write_fake_vlm_source(image_path)
+        return base64.b64encode(image_path.read_bytes()).decode()
 
-    return make_slide()
+
+def _write_fake_vlm_source(path: Path, *, size: tuple[int, int] = (800, 450)) -> None:
+    image = Image.new("RGB", size, "white")
+    width, height = size
+    ImageDraw.Draw(image).rectangle(
+        (
+            round(width * 0.08),
+            round(height * 0.08),
+            round(width * 0.48),
+            round(height * 0.18),
+        ),
+        fill="#2563EB",
+    )
+    image.save(path)
 
 
 def _fake_route_dependencies(
@@ -36,12 +53,77 @@ def _fake_route_dependencies(
     return dependencies
 
 
+def _fake_vlm_route_dependencies(
+    *,
+    validation_status="passed",
+    validation_code="preview_similarity_failed",
+    provider_exception=None,
+):
+    from src.generative_editable_config import ProviderConfig
+    from src.generative_editable_preview_validator import ValidationIssue, ValidationReport
+    from src.generative_editable_providers import FakeImageEditProvider, FakeOCRProvider
+    from src.generative_editable_vlm_reconstruction import (
+        FakeVLMPageAnalysisProvider,
+        VLMEditablePipelineDependencies,
+    )
+
+    def preview_validator(**kwargs):
+        if validation_status == "failed":
+            return ValidationReport(
+                status="failed",
+                checked_pages=1,
+                issues=[
+                    ValidationIssue(
+                        code=validation_code,
+                        message="forced preview failure",
+                        slide_id=kwargs["slide_id"],
+                    )
+                ],
+            )
+        return ValidationReport(status="passed", checked_pages=1, issues=[])
+
+    provider = ProviderConfig(
+        role="edit_model",
+        provider="fake_image_edit",
+        model="fake-image-edit",
+        base_url="fake",
+        api_key="fake",
+    )
+    ocr_provider = FakeOCRProvider(
+        ProviderConfig(
+            role="ocr_model",
+            provider="fake_ocr",
+            model="fake-ocr",
+            base_url="fake",
+            api_key="fake",
+        )
+    )
+    dependencies = VLMEditablePipelineDependencies(
+        vlm_provider=FakeVLMPageAnalysisProvider(),
+        image_edit_provider=FakeImageEditProvider(provider),
+        asset_sheet_image_edit_provider=FakeImageEditProvider(provider),
+        ocr_provider=ocr_provider,
+        preview_validator=preview_validator,
+    )
+    if provider_exception is not None:
+        dependencies = _with_raising_ocr_provider(dependencies, provider_exception)
+    return dependencies
+
+
 def _legacy_generative_config():
     from dataclasses import replace
 
     from src.generative_editable_config import load_generative_editable_config
 
     return replace(load_generative_editable_config(use_fake=True), reconstruction_mode="generative")
+
+
+def _vlm_first_config():
+    from dataclasses import replace
+
+    from src.generative_editable_config import load_generative_editable_config
+
+    return replace(load_generative_editable_config(use_fake=True), reconstruction_mode="vlm_first")
 
 
 def _with_raising_ocr_provider(dependencies, exception):
@@ -93,7 +175,7 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
     def setUp(self):
         self._config_patcher = patch(
             "api.routes.export.load_generative_editable_config",
-            return_value=_legacy_generative_config(),
+            return_value=_vlm_first_config(),
         )
         self._config_patcher.start()
 
@@ -446,7 +528,7 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
         asyncio.to_thread = fake_to_thread
         try:
             with patch(
-                "api.routes.export._build_generative_editable_pipeline_dependencies",
+                "api.routes.export._build_vlm_editable_pipeline_dependencies",
                 side_effect=GenerativeEditableConfigError("Missing provider configuration"),
             ):
                 with self.assertRaises(HTTPException) as ctx:
@@ -492,8 +574,8 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
         try:
             for raised, expected_status in ((timeout, 504), (provider_error, 502)):
                 with patch(
-                    "api.routes.export._build_generative_editable_pipeline_dependencies",
-                    lambda raised=raised: _fake_route_dependencies(provider_exception=raised),
+                    "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                    lambda config, raised=raised: _fake_vlm_route_dependencies(provider_exception=raised),
                 ):
                     with self.assertRaises(HTTPException) as ctx:
                         asyncio.run(
@@ -522,8 +604,8 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
         asyncio.to_thread = fake_to_thread
         try:
             with patch(
-                "api.routes.export._build_generative_editable_pipeline_dependencies",
-                lambda: _fake_route_dependencies(validation_status="failed"),
+                "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                lambda config: _fake_vlm_route_dependencies(validation_status="failed"),
             ):
                 with self.assertRaises(HTTPException) as ctx:
                     asyncio.run(
@@ -552,8 +634,11 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
         asyncio.to_thread = fake_to_thread
         try:
             with patch(
-                "api.routes.export._build_generative_editable_pipeline_dependencies",
-                lambda: _fake_route_dependencies(repair_limit_failure=True),
+                "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                lambda config: _fake_vlm_route_dependencies(
+                    validation_status="failed",
+                    validation_code="repair_limit_exceeded",
+                ),
             ):
                 with self.assertRaises(HTTPException) as ctx:
                     asyncio.run(
@@ -580,8 +665,8 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
         asyncio.to_thread = fake_to_thread
         try:
             with patch(
-                "api.routes.export._build_generative_editable_pipeline_dependencies",
-                lambda: _fake_route_dependencies(validation_status="failed"),
+                "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                lambda config: _fake_vlm_route_dependencies(validation_status="failed"),
             ):
                 response = asyncio.run(
                     export_presentation(
@@ -613,8 +698,8 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
         asyncio.to_thread = fake_to_thread
         try:
             with patch(
-                "api.routes.export._build_generative_editable_pipeline_dependencies",
-                lambda: _fake_route_dependencies(),
+                "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                lambda config: _fake_vlm_route_dependencies(),
             ):
                 response = asyncio.run(
                     export_presentation(
@@ -654,11 +739,11 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             image_path = Path(tmp) / "slide.png"
             output_path = Path(tmp) / "out.pptx"
-            Image.new("RGB", (800, 450), "white").save(image_path)
+            _write_fake_vlm_source(image_path)
 
             with patch(
-                "api.routes.export._build_generative_editable_pipeline_dependencies",
-                lambda: _fake_route_dependencies(),
+                "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                lambda config: _fake_vlm_route_dependencies(),
             ):
                 result = export_route._export_generative_editable_pptx(
                     [str(image_path)],
@@ -730,11 +815,11 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             image_path = Path(tmp) / "slide.png"
             output_path = Path(tmp) / "out.pptx"
-            Image.new("RGB", (800, 450), "white").save(image_path)
+            _write_fake_vlm_source(image_path, size=(800, 600))
 
             with patch("api.routes.export._export_pptx", fake_raster_export), patch(
-                "api.routes.export._build_generative_editable_pipeline_dependencies",
-                lambda: _fake_route_dependencies(validation_status="failed"),
+                "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                lambda config: _fake_vlm_route_dependencies(validation_status="failed"),
             ):
                 result = export_route._export_generative_editable_pptx(
                     [str(image_path)],
@@ -759,11 +844,11 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             image_path = Path(tmp) / "slide.png"
             output_path = Path(tmp) / "out.pptx"
-            Image.new("RGB", (800, 450), "white").save(image_path)
+            _write_fake_vlm_source(image_path)
 
             with patch(
-                "api.routes.export._build_generative_editable_pipeline_dependencies",
-                lambda: _fake_route_dependencies(validation_status="failed"),
+                "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                lambda config: _fake_vlm_route_dependencies(validation_status="failed"),
             ):
                 result = export_route._export_generative_editable_pptx(
                     [str(image_path)],

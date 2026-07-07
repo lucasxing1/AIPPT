@@ -1479,6 +1479,96 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertLessEqual(page.text_boxes[0].font_size or 0, 10.6)
         self.assertTrue(page.text_boxes[0].style_hints["approximate_layout"])
 
+    def test_vlm_title_font_size_preserves_large_visual_hierarchy(self):
+        from src.generative_editable_vlm_reconstruction import (
+            build_page_manifest_from_vlm_analysis,
+            coerce_vlm_analysis,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            Image.new("RGB", (1672, 941), "#001122").save(source)
+            Image.new("RGB", (1672, 941), "#001122").save(background)
+            analysis = coerce_vlm_analysis(
+                {
+                    "coordinate_space": {"width": 1672, "height": 941, "unit": "px"},
+                    "text_regions": [
+                        {
+                            "id": "hero-title",
+                            "text": "旗舰增程SUV的技术实验",
+                            "bbox": [67, 283, 923, 368],
+                            "role": "title",
+                            "confidence": 0.95,
+                        }
+                    ],
+                    "bitmap_regions": [],
+                    "shape_regions": [],
+                }
+            )
+
+            page = build_page_manifest_from_vlm_analysis(
+                analysis=analysis,
+                slide_id="slide-a",
+                page_index=0,
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                aspect_ratio="16:9",
+            )
+
+        self.assertGreaterEqual(page.text_boxes[0].font_size or 0, 32.0)
+        self.assertTrue(page.text_boxes[0].style_hints["bold"])
+
+    def test_vlm_page_manifest_marks_clean_background_as_text_clean(self):
+        from src.generative_editable_vlm_reconstruction import (
+            build_page_manifest_from_vlm_analysis,
+            coerce_vlm_analysis,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            Image.new("RGB", (800, 450), "#001122").save(source)
+            Image.new("RGB", (800, 450), "#001122").save(background)
+            analysis = coerce_vlm_analysis(
+                {
+                    "coordinate_space": {"width": 800, "height": 450, "unit": "px"},
+                    "text_regions": [
+                        {
+                            "id": "title",
+                            "text": "Editable Title",
+                            "bbox": [64, 36, 384, 81],
+                            "role": "title",
+                            "confidence": 1.0,
+                        }
+                    ],
+                    "bitmap_regions": [],
+                    "shape_regions": [],
+                }
+            )
+
+            page = build_page_manifest_from_vlm_analysis(
+                analysis=analysis,
+                slide_id="slide-a",
+                page_index=0,
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                aspect_ratio="16:9",
+            )
+
+        self.assertEqual(page.chosen_background, "backgrounds/0000-slide-a/clean.png")
+        self.assertEqual(page.text_clean_background, page.chosen_background)
+        self.assertEqual(page.base_clean_background, page.chosen_background)
+        self.assertEqual(page.provenance["chosen_background_kind"], "source_preserving_text_clean")
+
     def test_vlm_text_resolution_keeps_high_confidence_vlm_text_over_mismatched_ocr(self):
         from src.generative_editable_manifest import TextBoxSpec
         from src.generative_editable_vlm_reconstruction import (

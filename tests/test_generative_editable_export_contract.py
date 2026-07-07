@@ -260,6 +260,67 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
 
             self.assertFalse(output_path.exists())
 
+    def test_generative_editable_export_rejects_non_vlm_reconstruction_mode(self):
+        from src.generative_editable_config import (
+            GenerativeEditableConfig,
+            GenerativeEditableConfigError,
+            ProviderConfig,
+            QualityConfig,
+            RetryConfig,
+            TimeoutConfig,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = Path(tmp) / "slide.png"
+            output_path = Path(tmp) / "out.pptx"
+            Image.new("RGB", (800, 450), "white").save(image_path)
+            legacy_called = False
+
+            def fake_legacy_pipeline(**kwargs):
+                nonlocal legacy_called
+                legacy_called = True
+                Path(kwargs["output_path"]).write_bytes(b"legacy")
+
+            provider = ProviderConfig(
+                role="stub",
+                model="stub-model",
+                base_url="https://example.test/v1",
+                api_key="secret",
+            )
+            non_vlm_config = GenerativeEditableConfig(
+                ocr=provider,
+                clean_base_model=provider,
+                asset_sheet_model=provider,
+                repair_model=provider,
+                generation_model=provider,
+                use_aippt_metadata_first=True,
+                ocr_min_confidence=0.75,
+                quality=QualityConfig(),
+                retries=RetryConfig(),
+                timeouts=TimeoutConfig(),
+                reconstruction_mode="generative",
+            )
+
+            original_loader = export_route.load_generative_editable_config
+            original_legacy = export_route.run_generative_editable_pipeline
+            export_route.load_generative_editable_config = lambda: non_vlm_config
+            export_route.run_generative_editable_pipeline = fake_legacy_pipeline
+            try:
+                with self.assertRaisesRegex(
+                    GenerativeEditableConfigError,
+                    "VLM-first reconstruction is required",
+                ):
+                    export_route._export_generative_editable_pptx(
+                        [str(image_path)],
+                        str(output_path),
+                    )
+            finally:
+                export_route.load_generative_editable_config = original_loader
+                export_route.run_generative_editable_pipeline = original_legacy
+
+        self.assertFalse(legacy_called)
+        self.assertFalse(output_path.exists())
+
     def test_generative_export_accepts_explicit_raster_fallback_policy(self):
         with tempfile.TemporaryDirectory() as tmp:
             image_path = Path(tmp) / "slide.png"

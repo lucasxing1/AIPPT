@@ -114,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--mode",
         choices=["legacy", "vlm_first"],
-        default="legacy",
+        default="vlm_first",
         help="pipeline mode; legacy uses OCR/CV, vlm_first uses VLM structured analysis",
     )
     run_parser.add_argument("--job-id", default="")
@@ -408,7 +408,7 @@ def _run_one_gate(
 
 
 def _run_pipeline(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
-    if getattr(args, "mode", "legacy") == "vlm_first":
+    if getattr(args, "mode", "vlm_first") == "vlm_first":
         return _run_vlm_pipeline(args, output_dir)
     images = _resolve_input_images(args)
     job_id = args.job_id or _generated_job_id()
@@ -658,7 +658,7 @@ def _run_isolated_pages(args: argparse.Namespace, output_dir: Path) -> dict[str,
             str(Path(__file__).resolve()),
             "run",
             "--mode",
-            getattr(args, "mode", "legacy"),
+            getattr(args, "mode", "vlm_first"),
             "--input-images",
             str(image),
             "--output-dir",

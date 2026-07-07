@@ -169,6 +169,8 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
                 exit_code = main(
                     [
                         "run",
+                        "--mode",
+                        "legacy",
                         "--input-images",
                         str(source),
                         "--output-dir",
@@ -249,6 +251,8 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
                 exit_code = main(
                     [
                         "run",
+                        "--mode",
+                        "legacy",
                         "--input-images",
                         str(source),
                         "--output-dir",
@@ -268,7 +272,7 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             str((root / "out" / "fallback-policy.raster-fallback.pptx").resolve()),
         )
 
-    def test_run_mode_can_route_to_vlm_first_pipeline(self):
+    def test_run_mode_defaults_to_vlm_first_pipeline(self):
         import scripts.run_real_generative_editable_pptx as runner
 
         captured = {}
@@ -320,14 +324,17 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             with (
                 patch.object(runner, "_vlm_dependencies", return_value=dependency_sentinel),
                 patch.object(runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline),
+                patch.object(
+                    runner,
+                    "run_generative_editable_pipeline",
+                    side_effect=AssertionError("default run mode must not call legacy pipeline"),
+                ),
                 patch.object(runner, "_write_preview_reports", return_value=[]),
                 redirect_stdout(stdout),
             ):
                 exit_code = main(
                     [
                         "run",
-                        "--mode",
-                        "vlm_first",
                         "--input-images",
                         str(source),
                         "--output-dir",
@@ -587,6 +594,8 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
                 exit_code = main(
                     [
                         "run",
+                        "--mode",
+                        "legacy",
                         "--input-images",
                         str(source),
                         "--output-dir",
@@ -2786,7 +2795,9 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             input_dir = root / "inputs"
             input_dir.mkdir()
             image_path = input_dir / "slide_1.png"
-            Image.new("RGB", (800, 450), "#FFFFFF").save(image_path)
+            image = Image.new("RGB", (800, 450), "#FFFFFF")
+            ImageDraw.Draw(image).rectangle((64, 36, 384, 81), fill="#2563EB")
+            image.save(image_path)
 
             stdout = io.StringIO()
             with redirect_stdout(stdout):

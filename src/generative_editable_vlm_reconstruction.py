@@ -1252,13 +1252,16 @@ def build_page_manifest_from_vlm_analysis(
             for region in analysis.shape_regions
             for shape in _native_shapes_from_vlm(region, mapper, source_image_size)
         ]
+    background_ref = _artifact_ref(background_path, root)
     return PageManifest(
         slide_id=slide_id,
         page_index=page_index,
         source_image_path=_artifact_ref(source_path, root),
         source_image_size=source_image_size,
         slide_size=_slide_size_inches(aspect_ratio),
-        chosen_background=_artifact_ref(background_path, root),
+        text_clean_background=background_ref,
+        base_clean_background=background_ref,
+        chosen_background=background_ref,
         text_boxes=resolved_text_boxes,
         native_shapes=native_shapes,
         bitmap_assets=resolved_bitmap_assets,
@@ -1266,6 +1269,7 @@ def build_page_manifest_from_vlm_analysis(
         provider_output_paths={},
         provenance={
             "reconstruction_strategy": "vlm_first",
+            "chosen_background_kind": "source_preserving_text_clean",
             "vlm_counts": {
                 "text_regions": len(analysis.text_regions),
                 "bitmap_regions": len(analysis.bitmap_regions),
@@ -2732,9 +2736,10 @@ def _estimate_font_size(
     # VLM bboxes describe the visible glyph envelope, while PPT renderers need
     # extra line-height headroom. A conservative factor avoids dense pages
     # drifting from source renders because text clips or expands vertically.
-    font_size = height_px / source_image_size[1] * slide_height_inches * 72 * 0.65
     if role in {"title", "heading"}:
-        return max(9.0, min(font_size, 30.0))
+        font_size = height_px / source_image_size[1] * slide_height_inches * 72 * 0.9
+        return max(12.0, min(font_size, 44.0))
+    font_size = height_px / source_image_size[1] * slide_height_inches * 72 * 0.65
     return max(7.0, min(font_size, 22.0))
 
 

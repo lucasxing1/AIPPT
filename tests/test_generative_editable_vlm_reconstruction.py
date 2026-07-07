@@ -825,6 +825,65 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual(mask.getpixel((80, 80)), 0)
         self.assertEqual([box.kind for box in mask_boxes], ["text", "bitmap"])
 
+    def test_mask_expands_complex_bitmap_regions_more_than_icon_regions(self):
+        from src.generative_editable_vlm_reconstruction import (
+            VLMCoordinateMapper,
+            build_text_bitmap_mask,
+            coerce_vlm_analysis,
+        )
+
+        analysis = coerce_vlm_analysis(
+            {
+                "coordinate_space": {"width": 160, "height": 90, "unit": "px"},
+                "text_regions": [],
+                "bitmap_regions": [
+                    {"id": "product", "type": "product", "bbox": [80, 20, 120, 45]},
+                    {"id": "icon", "type": "icon", "bbox": [10, 20, 20, 30]},
+                ],
+                "shape_regions": [],
+            }
+        )
+        mapper = VLMCoordinateMapper(
+            analysis_space=analysis.coordinate_space,
+            source_image_size=(160, 90),
+        )
+
+        _mask, mask_boxes = build_text_bitmap_mask(analysis, mapper, padding=4)
+
+        by_id = {box.region_id: box.bbox for box in mask_boxes}
+        self.assertEqual(by_id["icon"], (6, 16, 24, 34))
+        self.assertLessEqual(by_id["product"][0], 64)
+        self.assertLessEqual(by_id["product"][1], 4)
+        self.assertGreaterEqual(by_id["product"][2], 136)
+        self.assertGreaterEqual(by_id["product"][3], 61)
+
+    def test_mask_expansion_does_not_cover_adjacent_text_region(self):
+        from src.generative_editable_vlm_reconstruction import (
+            VLMCoordinateMapper,
+            build_text_bitmap_mask,
+            coerce_vlm_analysis,
+        )
+
+        analysis = coerce_vlm_analysis(
+            {
+                "coordinate_space": {"width": 160, "height": 90, "unit": "px"},
+                "text_regions": [{"id": "label", "text": "文字", "bbox": [25, 25, 37, 45]}],
+                "bitmap_regions": [
+                    {"id": "product", "type": "product", "bbox": [40, 20, 80, 50]},
+                ],
+                "shape_regions": [],
+            }
+        )
+        mapper = VLMCoordinateMapper(
+            analysis_space=analysis.coordinate_space,
+            source_image_size=(160, 90),
+        )
+
+        _mask, mask_boxes = build_text_bitmap_mask(analysis, mapper, padding=4)
+
+        by_id = {box.region_id: box.bbox for box in mask_boxes}
+        self.assertGreaterEqual(by_id["product"][0], 38)
+
     def test_builds_manifest_with_editable_text_split_assets_and_conservative_shapes(self):
         from src.generative_editable_manifest import PageManifest
         from src.generative_editable_vlm_reconstruction import (
@@ -939,6 +998,49 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual(selected[0].provenance["original_source_pixel_bbox"], [30, 20, 70, 50])
         self.assertEqual(selected[0].source_pixel_bbox, (22, 12, 78, 58))
         self.assertEqual(selected_pixel[:3], (34, 170, 255))
+
+    def test_complex_source_preserved_assets_use_opaque_crop_not_background_diff_alpha(self):
+        from src.generative_editable_foreground_planner import ForegroundCandidate
+        from src.generative_editable_vlm_reconstruction import (
+            _source_preserved_bitmap_assets_from_candidates,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            source_image = Image.new("RGB", (120, 80), "#001122")
+            draw = ImageDraw.Draw(source_image)
+            draw.rectangle((30, 18, 105, 55), fill="#0B2A66")
+            draw.ellipse((36, 46, 52, 62), fill="#000000")
+            source_image.save(source)
+            Image.new("RGB", (120, 80), "#001122").save(background)
+            candidate = ForegroundCandidate(
+                candidate_id="vehicle",
+                source_pixel_bbox=(30, 18, 105, 62),
+                area=3300,
+                classification="complex_whole_visual",
+                provenance={"vlm_type": "photo"},
+            )
+
+            assets = _source_preserved_bitmap_assets_from_candidates(
+                candidates=[candidate],
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                slide_id="slide-a",
+                page_index=0,
+                reason="complex_bitmap_region",
+                asset_sheet_skipped_reason="complex_bitmap_region",
+            )
+            crop = Image.open(root / assets[0].asset_path).convert("RGBA")
+
+        self.assertEqual(crop.getpixel((0, 0))[3], 255)
+        self.assertEqual(crop.getpixel((crop.width - 1, crop.height - 1))[3], 255)
+        self.assertEqual(assets[0].provenance["alpha_strategy"], "opaque_source_crop")
+        self.assertNotIn("background_difference_alpha", assets[0].provenance)
 
     def test_foreground_crop_preserves_edge_foreground_close_to_background(self):
         from src.generative_editable_vlm_reconstruction import _foreground_rgba_crop
@@ -2417,7 +2519,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertIn("Preserve every unmasked pixel", image_edit_provider.calls[0].prompt)
         self.assertIn("asset_sheet", [request.prompt_id for request in image_edit_provider.calls])
         asset_sheet_request = next(request for request in image_edit_provider.calls if request.prompt_id == "asset_sheet")
-        self.assertEqual(asset_sheet_request.timeout_seconds, 45)
+        self.assertEqual(asset_sheet_request.timeout_seconds, 120)
         self.assertEqual(mask.getpixel((75, 40)), 255)
         self.assertIn("vlm", page.provider_output_paths)
         self.assertIn("asset_sheet", page.provider_output_paths)
@@ -2819,7 +2921,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual(len(page.bitmap_assets), 1)
         self.assertEqual(page.bitmap_assets[0].provenance["asset_strategy"], "source_preserved_crop")
         self.assertEqual(page.bitmap_assets[0].provenance["asset_sheet_skipped_reason"], "complex_bitmap_region")
-        self.assertTrue(page.bitmap_assets[0].provenance["background_difference_alpha"])
+        self.assertEqual(page.bitmap_assets[0].provenance["alpha_strategy"], "opaque_source_crop")
+        self.assertNotIn("background_difference_alpha", page.bitmap_assets[0].provenance)
         self.assertIn("alpha_visible_area_ratio", page.bitmap_assets[0].provenance)
 
     def test_vlm_pipeline_asset_sheet_failure_does_not_duplicate_complex_source_crops(self):
@@ -3097,6 +3200,113 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual(page.text_boxes[0].provenance["layout_source"], "ocr")
         self.assertIn("ocr", page.provider_output_paths)
         self.assertEqual(mask.getpixel((25, 25)), 255)
+
+    def test_vlm_pipeline_clears_ocr_only_text_from_complex_source_preserved_crop(self):
+        from src.generative_editable_manifest import read_deck_manifest, read_page_manifest
+        from src.generative_editable_preview_validator import ValidationReport
+        from src.generative_editable_providers import OCRProvider
+        from src.generative_editable_vlm_reconstruction import (
+            VLMEditablePipelineDependencies,
+            VLMPageAnalysisProvider,
+            coerce_vlm_analysis,
+            run_vlm_editable_pptx_pipeline,
+        )
+
+        class ProductOnlyVLMProvider(VLMPageAnalysisProvider):
+            def analyze_page(self, image_path, *, timeout_seconds=180):
+                return coerce_vlm_analysis(
+                    {
+                        "coordinate_space": {"width": 160, "height": 90, "unit": "px"},
+                        "text_regions": [],
+                        "bitmap_regions": [
+                            {
+                                "id": "product",
+                                "type": "product",
+                                "bbox": [20, 20, 110, 70],
+                                "importance": "major",
+                            }
+                        ],
+                        "shape_regions": [],
+                    }
+                )
+
+        class OverlappingOCRProvider(OCRProvider):
+            def __init__(self):
+                super().__init__(
+                    ProviderConfig(
+                        role="ocr_model",
+                        provider="fake_ocr",
+                        model="fake-ocr",
+                        base_url="fake",
+                        api_key="fake",
+                    )
+                )
+
+            def extract_text(self, image_path):
+                return OCRResult(
+                    source_image_path=image_path,
+                    image_size=(160, 90),
+                    provider_role=self.config.role,
+                    provider_name="fake_ocr",
+                    model="fake-ocr",
+                    items=[
+                        OCRTextItem(
+                            text="OCR",
+                            bbox=(34, 30, 58, 42),
+                            polygon=((34, 30), (58, 30), (58, 42), (34, 42)),
+                            confidence=0.99,
+                            color_hex="#FFFFFF",
+                            font_size_hint=12,
+                            provenance={"item_id": "ocr-overlap"},
+                        )
+                    ],
+                )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input.png"
+            image = Image.new("RGB", (160, 90), "#001122")
+            draw = ImageDraw.Draw(image)
+            draw.rectangle((20, 20, 110, 70), fill="#0B2A66")
+            draw.rectangle((34, 30, 58, 42), fill="#FFFFFF")
+            image.save(source)
+
+            run_vlm_editable_pptx_pipeline(
+                slides=[{"slide_id": "slide-a", "image_path": str(source)}],
+                output_path=str(root / "out.pptx"),
+                artifact_root=str(root / "artifacts"),
+                job_id="job-ocr-crop",
+                dependencies=VLMEditablePipelineDependencies(
+                    vlm_provider=ProductOnlyVLMProvider(),
+                    image_edit_provider=FakeImageEditProvider(
+                        ProviderConfig(
+                            role="edit_model",
+                            provider="fake_image_edit",
+                            model="fake-image-edit",
+                            base_url="fake",
+                            api_key="fake",
+                        )
+                    ),
+                    ocr_provider=OverlappingOCRProvider(),
+                    structure_validator=lambda **kwargs: ValidationReport(
+                        status="passed", checked_pages=1, issues=[]
+                    ),
+                    preview_renderer=lambda page, artifact_root, *, pptx_path: object(),
+                    preview_validator=lambda **kwargs: ValidationReport(
+                        status="passed", checked_pages=1, issues=[]
+                    ),
+                ),
+            )
+            job_dir = root / "artifacts" / "job-ocr-crop"
+            deck = read_deck_manifest(job_dir / "deck.json")
+            page = read_page_manifest(job_dir / deck.page_manifest_paths[0])
+            asset = page.bitmap_assets[0]
+            crop = Image.open(job_dir / asset.asset_path).convert("RGBA")
+            crop_x = 36 - asset.source_pixel_bbox[0]
+            crop_y = 32 - asset.source_pixel_bbox[1]
+
+        self.assertEqual(asset.provenance["alpha_strategy"], "opaque_source_crop")
+        self.assertEqual(crop.getpixel((crop_x, crop_y))[3], 0)
 
 
 if __name__ == "__main__":

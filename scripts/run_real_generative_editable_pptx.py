@@ -201,7 +201,20 @@ def _add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--aspect-ratio", choices=["16:9", "4:3"], default="16:9")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--use-fake", action="store_true")
-    parser.add_argument("--provider-timeout", type=int, default=60)
+    parser.add_argument(
+        "--provider-timeout",
+        type=int,
+        default=0,
+        help="provider call timeout seconds; 0 uses generative_editable_pptx.timeouts.provider_call",
+    )
+
+
+def _provider_timeout_for_args(args: argparse.Namespace) -> int:
+    configured = int(getattr(args, "provider_timeout", 0) or 0)
+    if configured > 0:
+        return configured
+    config = load_generative_editable_config(use_fake=bool(getattr(args, "use_fake", False)))
+    return config.timeouts.provider_call
 
 
 def _run_gates(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
@@ -210,9 +223,10 @@ def _run_gates(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     gate_wall_timeout = int(getattr(args, "gate_wall_timeout", 0) or 0)
     if gate_wall_timeout > 0:
         return _run_gates_with_wall_timeout(args, output_dir, images, requested, gate_wall_timeout)
+    provider_timeout = _provider_timeout_for_args(args)
     dependencies = _gate_dependencies(
         use_fake=args.use_fake,
-        provider_timeout=args.provider_timeout,
+        provider_timeout=provider_timeout,
         provider_max_attempts=getattr(args, "provider_max_attempts", 0),
         provider_retry_backoff_seconds=getattr(args, "provider_retry_backoff", -1.0),
     )
@@ -220,7 +234,7 @@ def _run_gates(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     gates = []
     for gate in requested:
         gate_dependencies = dependencies["vlm"] if gate == "vlm_analysis" else dependencies["legacy"]
-        gates.append(_run_one_gate(gate, images, gate_dependencies, output_dir, args.provider_timeout))
+        gates.append(_run_one_gate(gate, images, gate_dependencies, output_dir, provider_timeout))
     status = "passed" if all(item["status"] == "passed" for item in gates) else "failed"
     report = {
         "status": status,
@@ -415,8 +429,9 @@ def _run_pipeline(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
     artifact_root = output_dir / "artifacts"
     output_path = output_dir / f"{job_id}.pptx"
     raster_fallback_path = output_dir / f"{job_id}.raster-fallback.pptx"
+    provider_timeout = _provider_timeout_for_args(args)
     dependencies = replace(
-        _with_timeout(_dependencies(use_fake=args.use_fake), args.provider_timeout),
+        _with_timeout(_dependencies(use_fake=args.use_fake), provider_timeout),
         allow_source_crop_asset_fallback=False,
     )
     result = run_generative_editable_pipeline(
@@ -499,9 +514,10 @@ def _run_vlm_pipeline(args: argparse.Namespace, output_dir: Path) -> dict[str, A
     job_id = args.job_id or _generated_job_id()
     artifact_root = output_dir / "artifacts"
     output_path = output_dir / f"{job_id}.pptx"
+    provider_timeout = _provider_timeout_for_args(args)
     dependencies = _vlm_dependencies(
         use_fake=args.use_fake,
-        provider_timeout=args.provider_timeout,
+        provider_timeout=provider_timeout,
         provider_max_attempts=getattr(args, "provider_max_attempts", 0),
         provider_retry_backoff_seconds=getattr(args, "provider_retry_backoff", -1.0),
         page_timeout_seconds=getattr(args, "pipeline_page_timeout", 0.0),
@@ -649,6 +665,7 @@ def _run_isolated_pages(args: argparse.Namespace, output_dir: Path) -> dict[str,
     images = _resolve_input_images(args)
     job_id = args.job_id or f"real-editable-{datetime.now().strftime('%Y%m%d%H%M%S')}"
     page_reports = []
+    provider_timeout = _provider_timeout_for_args(args)
     for index, image in enumerate(images, start=1):
         page_dir = output_dir / f"page-{index:02d}"
         page_dir.mkdir(parents=True, exist_ok=True)
@@ -668,7 +685,7 @@ def _run_isolated_pages(args: argparse.Namespace, output_dir: Path) -> dict[str,
             "--aspect-ratio",
             args.aspect_ratio,
             "--provider-timeout",
-            str(args.provider_timeout),
+            str(provider_timeout),
             "--provider-max-attempts",
             str(getattr(args, "provider_max_attempts", 0)),
             "--provider-retry-backoff",

@@ -383,6 +383,82 @@ class GenerativeEditableAssetsTest(unittest.TestCase):
                     padding=4,
                 )
 
+    def test_component_slicing_can_ignore_extra_components_when_explicitly_allowed(self):
+        from src.generative_editable_assets import slice_asset_sheet_by_components
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sheet = root / "asset_sheets" / "0000-slide-a" / "sheet.png"
+            sheet.parent.mkdir(parents=True)
+            image = Image.new("RGBA", (240, 160), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(image)
+            draw.rectangle((20, 32, 58, 70), fill=(0, 112, 243, 255))
+            draw.rectangle((90, 32, 128, 70), fill=(16, 185, 129, 255))
+            draw.rectangle((20, 112, 27, 119), fill=(255, 255, 255, 255))
+            image.save(sheet)
+
+            assets = slice_asset_sheet_by_components(
+                sheet_path=sheet,
+                candidates=[
+                    ForegroundCandidate(
+                        candidate_id="fg-left",
+                        source_pixel_bbox=(10, 10, 45, 45),
+                        area=1200,
+                        classification="bitmap_asset_candidate",
+                    ),
+                    ForegroundCandidate(
+                        candidate_id="fg-right",
+                        source_pixel_bbox=(80, 12, 126, 54),
+                        area=1400,
+                        classification="bitmap_asset_candidate",
+                    ),
+                ],
+                output_dir=root / "assets" / "0000-slide-a",
+                asset_root=root,
+                padding=4,
+                allow_extra_components=True,
+            )
+
+        self.assertEqual([asset.asset_id for asset in assets], ["fg-left", "fg-right"])
+        self.assertTrue(all(asset.provenance["ignored_extra_component_count"] == 1 for asset in assets))
+
+    def test_component_slicing_rejects_large_extra_components_even_when_allowed(self):
+        from src.generative_editable_assets import slice_asset_sheet_by_components
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sheet = root / "asset_sheets" / "0000-slide-a" / "sheet.png"
+            sheet.parent.mkdir(parents=True)
+            image = Image.new("RGBA", (240, 120), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(image)
+            draw.rectangle((20, 32, 58, 70), fill=(255, 255, 255, 255))
+            draw.rectangle((90, 32, 128, 70), fill=(0, 112, 243, 255))
+            draw.rectangle((168, 28, 220, 78), fill=(16, 185, 129, 255))
+            image.save(sheet)
+
+            with self.assertRaisesRegex(ValueError, "unexpected extra component"):
+                slice_asset_sheet_by_components(
+                    sheet_path=sheet,
+                    candidates=[
+                        ForegroundCandidate(
+                            candidate_id="fg-left",
+                            source_pixel_bbox=(10, 10, 45, 45),
+                            area=1200,
+                            classification="bitmap_asset_candidate",
+                        ),
+                        ForegroundCandidate(
+                            candidate_id="fg-right",
+                            source_pixel_bbox=(80, 12, 126, 54),
+                            area=1400,
+                            classification="bitmap_asset_candidate",
+                        ),
+                    ],
+                    output_dir=root / "assets" / "0000-slide-a",
+                    asset_root=root,
+                    padding=4,
+                    allow_extra_components=True,
+                )
+
     def test_component_slicing_orders_same_row_by_horizontal_position(self):
         from src.generative_editable_assets import slice_asset_sheet_by_components
 

@@ -76,7 +76,12 @@ MIN_BITMAP_REGION_AREA_RATIO = 0.0004
 MAX_BITMAP_ELEMENT_AREA_RATIO = 0.72
 MAX_BITMAP_ELEMENT_WIDTH_RATIO = 0.92
 MAX_BITMAP_ELEMENT_HEIGHT_RATIO = 0.72
-ASSET_SHEET_PROVIDER_TIMEOUT_SECONDS = 45
+ASSET_SHEET_PROVIDER_TIMEOUT_SECONDS = 120
+COMPLEX_BITMAP_MASK_KINDS = frozenset({"photo", "product", "component", "complex"})
+CONDITIONAL_COMPLEX_BITMAP_MASK_KINDS = frozenset({"other", "qr"})
+MIN_COMPLEX_BITMAP_MASK_PADDING = 16
+MAX_COMPLEX_BITMAP_MASK_PADDING = 48
+COMPLEX_BITMAP_MASK_PADDING_RATIO = 0.08
 
 
 @dataclass(frozen=True)
@@ -941,16 +946,17 @@ def _build_vlm_page_manifest(
         analysis_space=analysis.coordinate_space,
         source_image_size=source_image_size,
     )
+    protected_text_bboxes = [
+        text_box.source_pixel_bbox
+        for text_box in (text_result.text_boxes if text_result else [])
+    ]
     page_deadline.check("vlm_build_mask")
     with _record_vlm_stage(artifacts, "vlm_build_mask", page_index=page_index, slide_id=slide_id):
         mask, mask_boxes = build_text_bitmap_mask(
             analysis,
             mapper,
             padding=dependencies.mask_padding,
-            additional_text_bboxes=[
-                text_box.source_pixel_bbox
-                for text_box in (text_result.text_boxes if text_result else [])
-            ],
+            additional_text_bboxes=protected_text_bboxes,
         )
         page_deadline.check("vlm_build_mask")
     mask_path = artifacts.asset_path(slide_id, page_index, "assets", "vlm-text-bitmap-mask.png")
@@ -1001,6 +1007,7 @@ def _build_vlm_page_manifest(
             page_index=page_index,
             edit_provider=asset_sheet_provider,
             timeout_seconds=asset_sheet_timeout_seconds,
+            additional_text_bboxes=protected_text_bboxes,
         )
         page_deadline.check("vlm_asset_sheet")
     vlm_output_path = artifacts.write_provider_output(
@@ -1178,6 +1185,11 @@ def build_text_bitmap_mask(
     mask = Image.new("L", mapper.source_image_size, 0)
     draw = ImageDraw.Draw(mask)
     boxes: list[MaskBox] = []
+    protected_bboxes = _protected_mask_bboxes(
+        analysis,
+        mapper,
+        additional_text_bboxes=additional_text_bboxes,
+    )
     for region in analysis.text_regions:
         bbox = mapper.to_source_bbox(region.bbox, padding=padding)
         draw.rectangle(bbox, fill=255)
@@ -1186,7 +1198,18 @@ def build_text_bitmap_mask(
         unpadded_bbox = mapper.to_source_bbox(region.bbox, padding=0)
         if _bitmap_region_should_be_ignored_as_element(unpadded_bbox, mapper.source_image_size):
             continue
-        bbox = mapper.to_source_bbox(region.bbox, padding=padding)
+        region_padding = _mask_padding_for_bitmap_region(
+            region,
+            unpadded_bbox,
+            mapper.source_image_size,
+            padding,
+        )
+        bbox = _expand_bbox_avoiding_protected(
+            unpadded_bbox,
+            padding=region_padding,
+            source_image_size=mapper.source_image_size,
+            protected_bboxes=protected_bboxes,
+        )
         draw.rectangle(bbox, fill=255)
         boxes.append(MaskBox(kind="bitmap", region_id=region.region_id, bbox=bbox))
     for index, bbox in enumerate(additional_text_bboxes or [], start=1):
@@ -1194,6 +1217,54 @@ def build_text_bitmap_mask(
         draw.rectangle(clamped, fill=255)
         boxes.append(MaskBox(kind="ocr_text", region_id=f"ocr-{index}", bbox=clamped))
     return mask, boxes
+
+
+def _protected_mask_bboxes(
+    analysis: VLMPageAnalysis,
+    mapper: VLMCoordinateMapper,
+    *,
+    additional_text_bboxes: list[PixelBBox] | None = None,
+) -> list[PixelBBox]:
+    protected = [
+        mapper.to_source_bbox(region.bbox, padding=0)
+        for region in analysis.text_regions
+    ]
+    protected.extend(
+        mapper.to_source_bbox(region.bbox, padding=0)
+        for region in analysis.shape_regions
+    )
+    protected.extend(additional_text_bboxes or [])
+    return protected
+
+
+def _expand_bbox_avoiding_protected(
+    bbox: PixelBBox,
+    *,
+    padding: int,
+    source_image_size: tuple[int, int],
+    protected_bboxes: list[PixelBBox],
+) -> PixelBBox:
+    left, top, right, bottom = bbox
+    expanded_left = left - padding
+    expanded_top = top - padding
+    expanded_right = right + padding
+    expanded_bottom = bottom + padding
+    for protected in protected_bboxes:
+        protected_left, protected_top, protected_right, protected_bottom = protected
+        if _ranges_overlap(top, bottom, protected_top, protected_bottom):
+            if protected_right <= left:
+                expanded_left = min(left, max(expanded_left, protected_right + 1))
+            elif protected_left >= right:
+                expanded_right = max(right, min(expanded_right, protected_left - 1))
+        if _ranges_overlap(left, right, protected_left, protected_right):
+            if protected_bottom <= top:
+                expanded_top = min(top, max(expanded_top, protected_bottom + 1))
+            elif protected_top >= bottom:
+                expanded_bottom = max(bottom, min(expanded_bottom, protected_top - 1))
+    return _clamp_bbox(
+        (expanded_left, expanded_top, expanded_right, expanded_bottom),
+        source_image_size,
+    )
 
 
 def build_page_manifest_from_vlm_analysis(
@@ -1806,11 +1877,13 @@ def _create_vlm_asset_sheet_assets(
     page_index: int,
     edit_provider: ImageEditProvider,
     timeout_seconds: int,
+    additional_text_bboxes: list[PixelBBox] | None = None,
 ) -> tuple[list[BitmapAssetSpec], list[AssetSheetSpec], Path | None]:
     text_bboxes = [
         mapper.to_source_bbox(region.bbox, padding=8)
         for region in analysis.text_regions
     ]
+    text_bboxes.extend(_pad_bbox(bbox, 8) for bbox in additional_text_bboxes or [])
     candidates = _foreground_candidates_from_vlm_bitmap_regions(analysis, mapper)
     candidates = _refine_candidates_with_clean_background_difference(
         candidates=candidates,
@@ -1883,6 +1956,7 @@ def _create_vlm_asset_sheet_assets(
             candidates=asset_sheet_candidates,
             output_dir=artifacts.job_dir / "assets" / f"{page_index:04d}-{_safe_name(slide_id)}",
             asset_root=artifacts.job_dir,
+            allow_extra_components=True,
         )
     except ValueError as exc:
         assets = _source_preserved_bitmap_assets_from_candidates(
@@ -2022,14 +2096,32 @@ def _source_preserved_bitmap_assets_from_candidates(
                 _pad_bbox(candidate.source_pixel_bbox, fallback_padding),
                 source_rgb.size,
             )
-            crop = _foreground_rgba_crop(
-                source_rgb,
-                background_rgb,
-                bbox,
-                transparent_bboxes=transparent_bboxes or [],
-            )
+            use_opaque_crop = candidate.classification == "complex_whole_visual"
+            if use_opaque_crop:
+                crop = source_rgb.crop(bbox).convert("RGBA")
+                _clear_crop_regions(crop, bbox, transparent_bboxes or [])
+            else:
+                crop = _foreground_rgba_crop(
+                    source_rgb,
+                    background_rgb,
+                    bbox,
+                    transparent_bboxes=transparent_bboxes or [],
+                )
             visible_pixel_count = _alpha_visible_pixel_count(crop)
             source_area = max(1, source_rgb.size[0] * source_rgb.size[1])
+            alpha_provenance = (
+                {
+                    "alpha_strategy": "opaque_source_crop",
+                    "alpha_visible_pixel_count": visible_pixel_count,
+                    "alpha_visible_area_ratio": round(visible_pixel_count / float(source_area), 6),
+                }
+                if use_opaque_crop
+                else {
+                    "background_difference_alpha": True,
+                    "alpha_visible_pixel_count": visible_pixel_count,
+                    "alpha_visible_area_ratio": round(visible_pixel_count / float(source_area), 6),
+                }
+            )
             output_path = output_dir / f"{_safe_name(candidate.candidate_id)}.source-preserved.png"
             crop.save(output_path)
             assets.append(
@@ -2044,10 +2136,8 @@ def _source_preserved_bitmap_assets_from_candidates(
                             "candidate_classification": candidate.classification,
                             "candidate_provenance": dict(candidate.provenance),
                             "asset_strategy": "source_preserved_crop",
-                            "background_difference_alpha": True,
-                            "alpha_visible_pixel_count": visible_pixel_count,
-                            "alpha_visible_area_ratio": round(visible_pixel_count / float(source_area), 6),
                             "original_source_pixel_bbox": list(candidate.source_pixel_bbox),
+                            **alpha_provenance,
                         },
                         provider_failed=asset_sheet_provider_failed,
                         slicing_failed=asset_sheet_slicing_failed,
@@ -2661,6 +2751,35 @@ def _bitmap_region_should_be_ignored_as_element(bbox: PixelBBox, size: tuple[int
     return _is_near_full_slide_region(bbox, size)
 
 
+def _mask_padding_for_bitmap_region(
+    region: VLMBitmapRegion,
+    bbox: PixelBBox,
+    source_image_size: tuple[int, int],
+    base_padding: int,
+) -> int:
+    if not _bitmap_region_needs_broad_clean_mask(region, bbox, source_image_size):
+        return base_padding
+    width = max(1, bbox[2] - bbox[0])
+    height = max(1, bbox[3] - bbox[1])
+    adaptive_padding = round(max(width, height) * COMPLEX_BITMAP_MASK_PADDING_RATIO)
+    broad_padding = max(MIN_COMPLEX_BITMAP_MASK_PADDING, adaptive_padding)
+    broad_padding = min(MAX_COMPLEX_BITMAP_MASK_PADDING, broad_padding)
+    return max(base_padding, broad_padding)
+
+
+def _bitmap_region_needs_broad_clean_mask(
+    region: VLMBitmapRegion,
+    bbox: PixelBBox,
+    source_image_size: tuple[int, int],
+) -> bool:
+    kind = region.kind.lower()
+    if kind in COMPLEX_BITMAP_MASK_KINDS:
+        return True
+    if kind not in CONDITIONAL_COMPLEX_BITMAP_MASK_KINDS:
+        return False
+    return region.importance.lower() == "major" or _area_ratio(bbox, source_image_size) >= 0.01
+
+
 def _is_near_full_slide_region(bbox: PixelBBox, size: tuple[int, int]) -> bool:
     width = max(1, size[0])
     height = max(1, size[1])
@@ -2698,6 +2817,10 @@ def _bbox_intersection_area(left_bbox: PixelBBox, right_bbox: PixelBBox) -> int:
     if right <= left or bottom <= top:
         return 0
     return (right - left) * (bottom - top)
+
+
+def _ranges_overlap(left_start: int, left_end: int, right_start: int, right_end: int) -> bool:
+    return min(left_end, right_end) > max(left_start, right_start)
 
 
 def _bbox_area(bbox: PixelBBox) -> int:

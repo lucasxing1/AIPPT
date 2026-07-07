@@ -433,6 +433,85 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
         self.assertEqual(captured["provider_retry_backoff_seconds"], 12.5)
         self.assertEqual(captured["page_timeout_seconds"], 240)
 
+    def test_vlm_first_run_default_provider_timeout_uses_config(self):
+        from dataclasses import replace
+
+        import scripts.run_real_generative_editable_pptx as runner
+        from src.generative_editable_config import TimeoutConfig
+
+        captured = {}
+        dependency_sentinel = object()
+        config = replace(
+            load_generative_editable_config(use_fake=True),
+            timeouts=TimeoutConfig(provider_call=123, page=456),
+        )
+
+        def fake_vlm_dependencies(**kwargs):
+            captured.update(kwargs)
+            return dependency_sentinel
+
+        def fake_vlm_pipeline(**kwargs):
+            from pptx import Presentation
+
+            from src.generative_editable_manifest import DeckManifest, write_manifest
+
+            output_path = Path(kwargs["output_path"])
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            Presentation().save(output_path)
+            job_dir = Path(kwargs["artifact_root"]) / kwargs["job_id"]
+            job_dir.mkdir(parents=True, exist_ok=True)
+            write_manifest(
+                job_dir / "deck.json",
+                DeckManifest(
+                    job_id=kwargs["job_id"],
+                    slide_order=[],
+                    aspect_ratio="16:9",
+                    provider_roles={"vlm": "VLM", "image_edit": "edit_model"},
+                    quality_settings={},
+                    fallback_policy="fail",
+                    page_manifest_paths=[],
+                    validation_status="passed",
+                ),
+            )
+            return type(
+                "Result",
+                (),
+                {
+                    "status": "passed",
+                    "output_path": str(output_path),
+                    "fallback_used": "",
+                },
+            )()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "slide.png"
+            Image.new("RGB", (800, 450), "#FFFFFF").save(source)
+            stdout = io.StringIO()
+            with (
+                patch.object(runner, "load_generative_editable_config", return_value=config),
+                patch.object(runner, "_vlm_dependencies", side_effect=fake_vlm_dependencies),
+                patch.object(runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline),
+                patch.object(runner, "_write_preview_reports", return_value=[]),
+                redirect_stdout(stdout),
+            ):
+                exit_code = main(
+                    [
+                        "run",
+                        "--mode",
+                        "vlm_first",
+                        "--input-images",
+                        str(source),
+                        "--output-dir",
+                        str(root / "out"),
+                        "--job-id",
+                        "vlm-config-timeout",
+                    ]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(captured["provider_timeout"], 123)
+
     def test_vlm_first_run_marks_preview_failure_as_failed(self):
         import scripts.run_real_generative_editable_pptx as runner
 

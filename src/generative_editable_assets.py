@@ -131,6 +131,7 @@ def slice_asset_sheet_by_components(
     asset_root: str | Path,
     padding: int = 12,
     min_component_area: int = 32,
+    allow_extra_components: bool = False,
 ) -> list[BitmapAssetSpec]:
     if not candidates:
         return []
@@ -155,6 +156,15 @@ def slice_asset_sheet_by_components(
             raise ValueError(
                 f"asset sheet contains unexpected extra component(s) for {candidates[0].candidate_id}"
             )
+        ignored_extra_component_count = 0
+        if len(boxes) > len(candidates) and allow_extra_components:
+            original_count = len(boxes)
+            boxes = [
+                box
+                for box in boxes
+                if not _is_ignorable_extra_component(box, min_component_area=min_component_area)
+            ]
+            ignored_extra_component_count = original_count - len(boxes)
         if len(boxes) > len(candidates):
             raise ValueError(
                 f"asset sheet contains unexpected extra component(s), got {len(boxes)} for {len(candidates)} candidate(s)"
@@ -179,10 +189,21 @@ def slice_asset_sheet_by_components(
                         "component_bbox": bbox,
                         "sheet_bbox": crop_box,
                         "split_method": "connected_components",
+                        "ignored_extra_component_count": ignored_extra_component_count,
                     },
                 )
             )
     return assets
+
+
+def _is_ignorable_extra_component(
+    bbox: tuple[int, int, int, int],
+    *,
+    min_component_area: int,
+) -> bool:
+    width = max(0, bbox[2] - bbox[0])
+    height = max(0, bbox[3] - bbox[1])
+    return width * height <= max(min_component_area, min_component_area * 4)
 
 
 def validate_sliced_asset(

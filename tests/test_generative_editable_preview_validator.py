@@ -314,7 +314,11 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
                         asset_path="assets/0000-slide-a/asset.source-preserved.png",
                         provenance={
                             "asset_strategy": "source_preserved_crop",
-                            "asset_sheet_provider_failed": True,
+                            "alpha_strategy": "opaque_source_crop",
+                            "candidate_classification": "complex_whole_visual",
+                            "asset_sheet_skipped_reason": "complex_bitmap_region",
+                            "candidate_provenance": {"source": "vlm_bitmap_region"},
+                            "original_source_pixel_bbox": [10, 10, 80, 80],
                         },
                     )
                 ],
@@ -331,6 +335,47 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
 
         self.assertEqual(report.status, "passed")
         self.assertNotIn(
+            "forbidden_source_crop_bitmap_asset",
+            [issue.code for issue in report.issues],
+        )
+
+    def test_structural_validation_rejects_incomplete_opaque_source_crop_provenance(self):
+        from src.generative_editable_composer import compose_deck_from_manifests
+        from src.generative_editable_preview_validator import validate_composed_deck_structure
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, page = self._write_validation_fixture(root)
+            source_preserved_path = root / "assets" / "0000-slide-a" / "asset.source-preserved.png"
+            source_preserved_path.write_bytes(
+                (root / "assets" / "0000-slide-a" / "asset.png").read_bytes()
+            )
+            unsafe_page = replace(
+                page,
+                bitmap_assets=[
+                    replace(
+                        page.bitmap_assets[0],
+                        asset_path="assets/0000-slide-a/asset.source-preserved.png",
+                        provenance={
+                            "asset_strategy": "source_preserved_crop",
+                            "alpha_strategy": "opaque_source_crop",
+                            "candidate_classification": "complex_whole_visual",
+                        },
+                    )
+                ],
+            )
+            write_manifest(root / "pages" / "0000-slide-a.json", unsafe_page)
+            output = root / "source-preserved-incomplete.pptx"
+            compose_deck_from_manifests(root / "deck.json", root, output)
+
+            report = validate_composed_deck_structure(
+                deck_manifest_path=root / "deck.json",
+                artifact_root=root,
+                pptx_path=output,
+            )
+
+        self.assertEqual(report.status, "failed")
+        self.assertIn(
             "forbidden_source_crop_bitmap_asset",
             [issue.code for issue in report.issues],
         )

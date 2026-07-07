@@ -615,6 +615,8 @@ def _validate_bitmap_asset_provenance(
     asset,
     issues: list[ValidationIssue],
 ) -> None:
+    if _is_allowed_complex_source_preserved_asset(asset):
+        return
     provenance_text = _compact_text(asset.provenance)
     asset_path_text = _compact_text(asset.asset_path)
     if not (
@@ -637,6 +639,23 @@ def _validate_bitmap_asset_provenance(
                 "repairable": True,
             },
         )
+    )
+
+
+def _is_allowed_complex_source_preserved_asset(asset) -> bool:
+    provenance = getattr(asset, "provenance", {}) or {}
+    candidate_provenance = provenance.get("candidate_provenance")
+    if not isinstance(candidate_provenance, dict):
+        candidate_provenance = {}
+    return (
+        provenance.get("asset_strategy") == "source_preserved_crop"
+        and provenance.get("candidate_classification") == "complex_whole_visual"
+        and provenance.get("alpha_strategy") == "opaque_source_crop"
+        and provenance.get("asset_sheet_skipped_reason") == "complex_bitmap_region"
+        and candidate_provenance.get("source") == "vlm_bitmap_region"
+        and bool(provenance.get("original_source_pixel_bbox"))
+        and not provenance.get("asset_sheet_provider_failed")
+        and not provenance.get("asset_sheet_slicing_failed")
     )
 
 

@@ -54,20 +54,25 @@ describe('ApiConfigForm Property Tests', () => {
       json: async () => ({
         success: true,
         profiles: {
-          prompt_model: {
+          text_model: {
             model: 'text-model',
-            base_url: 'https://text.example/v1',
-            adapter: 'openai_chat'
+            base_url: 'https://text.example/v1'
           },
           image_model: {
             model: 'image-model',
-            base_url: 'https://image.example/v1',
-            adapter: 'raw_chat_multimodal'
+            base_url: 'https://image.example/v1'
           },
           edit_model: {
             model: 'edit-model',
-            base_url: 'https://edit.example/v1',
-            adapter: 'raw_chat_multimodal'
+            base_url: 'https://edit.example/v1'
+          },
+          VLM: {
+            model: 'vlm-model',
+            base_url: 'https://vlm.example/v1'
+          },
+          ocr_model: {
+            model: 'ocr-model',
+            base_url: 'https://ocr.example/v1'
           }
         }
       })
@@ -84,6 +89,8 @@ describe('ApiConfigForm Property Tests', () => {
     await screen.findByText('image-model')
     expect(screen.getByText('text-model')).toBeInTheDocument()
     expect(screen.getByText('edit-model')).toBeInTheDocument()
+    expect(screen.getByText('vlm-model')).toBeInTheDocument()
+    expect(screen.getByText('ocr-model')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /图像生成模型/ })).toHaveAttribute('aria-expanded', 'false')
 
     await waitFor(() => {

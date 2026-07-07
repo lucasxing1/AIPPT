@@ -24,10 +24,20 @@ export interface Slide {
   imageBase64?: string
   imageStorageKey?: string
   imageAsset?: SlideAssetRef
+  textMetadata?: ExportTextMetadata[]
   prompt: string
   editHistory?: EditHistoryItem[]
   updatedAt?: number
 }
+
+export interface ExportTextMetadata {
+  text: string
+  role: string
+  order: number
+  style_hint?: Record<string, unknown>
+}
+
+export type EditablePptxFallbackPolicy = 'fail' | 'text_editable_background' | 'raster_pptx'
 
 /**
  * 编辑历史记录项
@@ -78,6 +88,8 @@ export interface FullApiConfig {
   image: ImageApiConfig
   text: TextApiConfig
   edit?: ImageApiConfig
+  vlm?: ImageApiConfig
+  ocr?: ImageApiConfig
 }
 
 /**
@@ -267,14 +279,15 @@ export interface ModelProfileRequestConfig {
   model: string
   base_url: string
   api_key: string
-  adapter: 'openai_chat' | 'raw_chat_multimodal' | string
   thinking?: 'enabled' | 'disabled'
 }
 
 export interface ModelProfilesRequestConfig {
-  prompt_model: ModelProfileRequestConfig
+  text_model: ModelProfileRequestConfig
   image_model: ModelProfileRequestConfig
   edit_model?: ModelProfileRequestConfig
+  VLM?: ModelProfileRequestConfig
+  ocr_model?: ModelProfileRequestConfig
 }
 
 export interface ModelProfilePublic {
@@ -282,7 +295,6 @@ export interface ModelProfilePublic {
   label: string
   model: string
   base_url: string
-  adapter: string
   has_api_key: boolean
   thinking?: 'enabled' | 'disabled'
 }
@@ -290,9 +302,12 @@ export interface ModelProfilePublic {
 export interface ModelProfilesResponse {
   success: boolean
   profiles?: {
-    prompt_model: ModelProfilePublic
+    text_model: ModelProfilePublic
+    prompt_model?: ModelProfilePublic
     image_model: ModelProfilePublic
     edit_model: ModelProfilePublic
+    VLM?: ModelProfilePublic
+    ocr_model?: ModelProfilePublic
   }
   message?: string
 }
@@ -313,4 +328,4 @@ export interface SSEEvent {
 /**
  * 导出格式
  */
-export type ExportFormat = 'pdf' | 'pptx'
+export type ExportFormat = 'pdf' | 'pptx' | 'generative_editable_pptx'

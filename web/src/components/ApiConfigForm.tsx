@@ -9,13 +9,13 @@ interface ApiConfigFormProps {
   initialConfig?: FullApiConfig
 }
 
-type ModelSection = 'image' | 'edit' | 'text'
+type ModelSection = 'image' | 'edit' | 'text' | 'vlm' | 'ocr'
 
 interface ModelCardProps {
   id: ModelSection
   title: string
   subtitle: string
-  tone: 'amber' | 'violet' | 'emerald'
+  tone: 'amber' | 'violet' | 'emerald' | 'cyan' | 'rose'
   model: string
   isOpen: boolean
   hasError?: boolean
@@ -40,6 +40,16 @@ const toneStyles = {
     card: 'border-emerald-200 bg-emerald-50/55',
     icon: 'bg-white text-emerald-700 shadow-sm',
     badge: 'bg-white/80 text-emerald-800 border-emerald-200',
+  },
+  cyan: {
+    card: 'border-cyan-200 bg-cyan-50/55',
+    icon: 'bg-white text-cyan-700 shadow-sm',
+    badge: 'bg-white/80 text-cyan-800 border-cyan-200',
+  },
+  rose: {
+    card: 'border-rose-200 bg-rose-50/55',
+    icon: 'bg-white text-rose-700 shadow-sm',
+    badge: 'bg-white/80 text-rose-800 border-rose-200',
   },
 }
 
@@ -70,7 +80,7 @@ function ModelCard({
           <div
             className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${styles.icon}`}
           >
-            {id === 'text' ? (
+            {id === 'text' || id === 'ocr' ? (
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
@@ -79,7 +89,7 @@ function ModelCard({
                   d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                 />
               </svg>
-            ) : id === 'edit' ? (
+            ) : id === 'edit' || id === 'vlm' ? (
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path
                   strokeLinecap="round"
@@ -145,6 +155,8 @@ function ApiConfigForm({ onConfigChange, initialConfig }: ApiConfigFormProps) {
     image?: { apiKey?: string; baseUrl?: string; model?: string }
     text?: { apiKey?: string; baseUrl?: string; model?: string }
     edit?: { apiKey?: string; baseUrl?: string; model?: string }
+    vlm?: { apiKey?: string; baseUrl?: string; model?: string }
+    ocr?: { apiKey?: string; baseUrl?: string; model?: string }
   }>({})
   const [openSections, setOpenSections] = useState<Record<ModelSection, boolean>>(() => {
     const loaded = initialConfig || loadFullApiConfig()
@@ -152,11 +164,15 @@ function ApiConfigForm({ onConfigChange, initialConfig }: ApiConfigFormProps) {
       image: !loaded.image.baseUrl,
       edit: !(loaded.edit || loaded.image).baseUrl,
       text: !loaded.text.baseUrl,
+      vlm: false,
+      ocr: false,
     }
   })
   const [showImageApiKey, setShowImageApiKey] = useState(false)
   const [showTextApiKey, setShowTextApiKey] = useState(false)
   const [showEditApiKey, setShowEditApiKey] = useState(false)
+  const [showVlmApiKey, setShowVlmApiKey] = useState(false)
+  const [showOcrApiKey, setShowOcrApiKey] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isOpen, setIsOpen] = useState(false)
@@ -170,7 +186,8 @@ function ApiConfigForm({ onConfigChange, initialConfig }: ApiConfigFormProps) {
     loadBackendModelProfiles()
       .then((response) => {
         if (cancelled || !response.success || !response.profiles) return
-        const { prompt_model, image_model, edit_model } = response.profiles
+        const { image_model, edit_model, VLM, ocr_model } = response.profiles
+        const text_model = response.profiles.text_model || response.profiles.prompt_model || VLM
         setConfig((prev) => ({
           image: {
             apiKey: prev.image.apiKey,
@@ -179,25 +196,37 @@ function ApiConfigForm({ onConfigChange, initialConfig }: ApiConfigFormProps) {
           },
           text: {
             apiKey: prev.text.apiKey,
-            baseUrl: prompt_model.base_url,
-            model: prompt_model.model,
+            baseUrl: text_model?.base_url || prev.text.baseUrl,
+            model: text_model?.model || prev.text.model,
             format: 'openai',
-            thinking: prompt_model.thinking || prev.text.thinking || 'disabled',
+            thinking: text_model?.thinking || prev.text.thinking || 'disabled',
           },
           edit: {
             apiKey: prev.edit?.apiKey || '',
             baseUrl: edit_model.base_url,
             model: edit_model.model,
           },
+          vlm: {
+            apiKey: prev.vlm?.apiKey || '',
+            baseUrl: VLM?.base_url || prev.vlm?.baseUrl || '',
+            model: VLM?.model || prev.vlm?.model || '',
+          },
+          ocr: {
+            apiKey: prev.ocr?.apiKey || '',
+            baseUrl: ocr_model?.base_url || prev.ocr?.baseUrl || '',
+            model: ocr_model?.model || prev.ocr?.model || '',
+          },
         }))
         setOpenSections({
           image: !image_model.base_url,
           edit: !edit_model.base_url,
-          text: !prompt_model.base_url,
+          text: !text_model?.base_url,
+          vlm: false,
+          ocr: false,
         })
       })
       .catch(() => {
-        setOpenSections({ image: true, edit: true, text: true })
+        setOpenSections({ image: true, edit: true, text: true, vlm: false, ocr: false })
       })
     return () => {
       cancelled = true
@@ -262,6 +291,24 @@ function ApiConfigForm({ onConfigChange, initialConfig }: ApiConfigFormProps) {
     }
   }
 
+  const handleOptionalModelConfigChange = (
+    section: 'vlm' | 'ocr',
+    field: keyof ImageApiConfig,
+    value: string
+  ) => {
+    setConfig((prev) => ({
+      ...prev,
+      [section]: { ...(prev[section] || { apiKey: '', baseUrl: '', model: '' }), [field]: value },
+    }))
+    setSaved(false)
+    if (errors[section]?.[field]) {
+      setErrors((prev) => ({
+        ...prev,
+        [section]: { ...prev[section], [field]: undefined },
+      }))
+    }
+  }
+
   const handleSave = async () => {
     const validation = validateFullApiConfig(config)
     if (!validation.isValid) {
@@ -271,6 +318,8 @@ function ApiConfigForm({ onConfigChange, initialConfig }: ApiConfigFormProps) {
         image: prev.image || Boolean(validation.errors.image),
         edit: prev.edit || Boolean(validation.errors.edit),
         text: prev.text || Boolean(validation.errors.text),
+        vlm: prev.vlm || Boolean(validation.errors.vlm),
+        ocr: prev.ocr || Boolean(validation.errors.ocr),
       }))
       return
     }
@@ -343,7 +392,15 @@ function ApiConfigForm({ onConfigChange, initialConfig }: ApiConfigFormProps) {
   )
 
   const editConfig = config.edit || config.image
-  const configuredModels = [config.text.model, config.image.model, editConfig.model].filter(Boolean)
+  const vlmConfig = config.vlm || { apiKey: '', baseUrl: '', model: '' }
+  const ocrConfig = config.ocr || { apiKey: '', baseUrl: '', model: '' }
+  const configuredModels = [
+    config.text.model,
+    config.image.model,
+    editConfig.model,
+    vlmConfig.model,
+    ocrConfig.model,
+  ].filter(Boolean)
   const modelSummary =
     configuredModels.length > 0 ? configuredModels.join(' / ') : t('api.unsetModel')
 
@@ -628,6 +685,120 @@ function ApiConfigForm({ onConfigChange, initialConfig }: ApiConfigFormProps) {
                   </button>
                 ))}
               </div>
+            </div>
+          </ModelCard>
+
+          <ModelCard
+            id="vlm"
+            title={t('api.vlm.title')}
+            subtitle={t('api.vlm.subtitle')}
+            tone="cyan"
+            model={vlmConfig.model}
+            isOpen={openSections.vlm}
+            hasError={Boolean(errors.vlm)}
+            errorLabel={t('api.needsCheck')}
+            emptyModelLabel={t('api.optionalUnsetModel')}
+            onToggle={toggleSection}
+          >
+            {renderKeyField(
+              vlmConfig.apiKey,
+              (value) => handleOptionalModelConfigChange('vlm', 'apiKey', value),
+              showVlmApiKey,
+              setShowVlmApiKey,
+              keyPlaceholder(!!vlmConfig.baseUrl, t('api.vlmLabel')),
+              !!errors.vlm?.apiKey
+            )}
+            {errors.vlm?.apiKey && <p className="text-xs text-red-500">{errors.vlm.apiKey}</p>}
+            <div>
+              <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1.5">
+                {t('api.baseUrl')}
+              </label>
+              <input
+                type="text"
+                value={vlmConfig.baseUrl}
+                onChange={(event) =>
+                  handleOptionalModelConfigChange('vlm', 'baseUrl', event.target.value)
+                }
+                placeholder={t('api.imageBasePlaceholder')}
+                className={inputClass(!!errors.vlm?.baseUrl)}
+              />
+              {errors.vlm?.baseUrl && (
+                <p className="mt-1 text-xs text-red-500">{errors.vlm.baseUrl}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1.5">
+                {t('api.modelName')}
+              </label>
+              <input
+                type="text"
+                value={vlmConfig.model}
+                onChange={(event) =>
+                  handleOptionalModelConfigChange('vlm', 'model', event.target.value)
+                }
+                placeholder={t('api.vlmModelPlaceholder')}
+                className={inputClass(!!errors.vlm?.model)}
+              />
+              {errors.vlm?.model && (
+                <p className="mt-1 text-xs text-red-500">{errors.vlm.model}</p>
+              )}
+            </div>
+          </ModelCard>
+
+          <ModelCard
+            id="ocr"
+            title={t('api.ocr.title')}
+            subtitle={t('api.ocr.subtitle')}
+            tone="rose"
+            model={ocrConfig.model}
+            isOpen={openSections.ocr}
+            hasError={Boolean(errors.ocr)}
+            errorLabel={t('api.needsCheck')}
+            emptyModelLabel={t('api.optionalUnsetModel')}
+            onToggle={toggleSection}
+          >
+            {renderKeyField(
+              ocrConfig.apiKey,
+              (value) => handleOptionalModelConfigChange('ocr', 'apiKey', value),
+              showOcrApiKey,
+              setShowOcrApiKey,
+              keyPlaceholder(!!ocrConfig.baseUrl, t('api.ocrLabel')),
+              !!errors.ocr?.apiKey
+            )}
+            {errors.ocr?.apiKey && <p className="text-xs text-red-500">{errors.ocr.apiKey}</p>}
+            <div>
+              <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1.5">
+                {t('api.baseUrl')}
+              </label>
+              <input
+                type="text"
+                value={ocrConfig.baseUrl}
+                onChange={(event) =>
+                  handleOptionalModelConfigChange('ocr', 'baseUrl', event.target.value)
+                }
+                placeholder={t('api.imageBasePlaceholder')}
+                className={inputClass(!!errors.ocr?.baseUrl)}
+              />
+              {errors.ocr?.baseUrl && (
+                <p className="mt-1 text-xs text-red-500">{errors.ocr.baseUrl}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-[var(--text-muted)] mb-1.5">
+                {t('api.modelName')}
+              </label>
+              <input
+                type="text"
+                value={ocrConfig.model}
+                onChange={(event) =>
+                  handleOptionalModelConfigChange('ocr', 'model', event.target.value)
+                }
+                placeholder={t('api.ocrModelPlaceholder')}
+                className={inputClass(!!errors.ocr?.model)}
+              />
+              {errors.ocr?.model && (
+                <p className="mt-1 text-xs text-red-500">{errors.ocr.model}</p>
+              )}
             </div>
           </ModelCard>
 

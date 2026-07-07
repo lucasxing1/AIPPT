@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import * as fc from 'fast-check'
 import { Slide, ExportFormat } from '../../types'
-import { canExport } from '../../services/exportService'
+import { buildExportRequestBody, canExport } from '../../services/exportService'
 
 /**
  * Feature: webui-frontend, Property 8: Export Format Consistency
@@ -36,20 +36,11 @@ const slidesArbitrary = (count: number): fc.Arbitrary<Slide[]> => {
 /**
  * Generate export format
  */
-const exportFormatArbitrary: fc.Arbitrary<ExportFormat> = fc.constantFrom('pdf', 'pptx')
-
-/**
- * Helper function to build export request body
- * This mimics the behavior in exportService.ts
- */
-function buildExportRequestBody(slides: Slide[], format: ExportFormat) {
-  return {
-    slides: slides.map(slide => ({
-      image_base64: slide.imageBase64 || extractBase64FromDataUrl(slide.imageUrl)
-    })),
-    format
-  }
-}
+const allExportFormatArbitrary: fc.Arbitrary<ExportFormat> = fc.constantFrom(
+  'pdf',
+  'pptx',
+  'generative_editable_pptx'
+)
 
 /**
  * Extract base64 from data URL
@@ -87,9 +78,9 @@ describe('Export Format Consistency Property Tests', () => {
       fc.assert(
         fc.property(
           fc.integer({ min: 1, max: 20 }).chain(count => slidesArbitrary(count)),
-          exportFormatArbitrary,
+          allExportFormatArbitrary,
           (slides, format) => {
-            const requestBody = buildExportRequestBody(slides, format)
+            const requestBody = buildExportRequestBody({ slides, format, aspectRatio: '16:9' })
             
             // Property: Export request should contain same number of slides
             expect(requestBody.slides.length).toBe(slides.length)
@@ -106,11 +97,11 @@ describe('Export Format Consistency Property Tests', () => {
       fc.assert(
         fc.property(
           fc.integer({ min: 2, max: 20 }).chain(count => slidesArbitrary(count)),
-          exportFormatArbitrary,
+          allExportFormatArbitrary,
           (slides, format) => {
             // Ensure slides are sorted by page number first
             const sortedSlides = [...slides].sort((a, b) => a.pageNumber - b.pageNumber)
-            const requestBody = buildExportRequestBody(sortedSlides, format)
+            const requestBody = buildExportRequestBody({ slides: sortedSlides, format, aspectRatio: '16:9' })
             
             // Property: Export request slides should be in same order as input
             for (let i = 0; i < sortedSlides.length; i++) {
@@ -131,9 +122,9 @@ describe('Export Format Consistency Property Tests', () => {
       fc.assert(
         fc.property(
           fc.integer({ min: 1, max: 10 }).chain(count => slidesArbitrary(count)),
-          exportFormatArbitrary,
+          allExportFormatArbitrary,
           (slides, format) => {
-            const requestBody = buildExportRequestBody(slides, format)
+            const requestBody = buildExportRequestBody({ slides, format, aspectRatio: '4:3' })
             
             // Property: Format should match requested format
             expect(requestBody.format).toBe(format)
@@ -202,9 +193,9 @@ describe('Export Format Consistency Property Tests', () => {
       fc.assert(
         fc.property(
           fc.integer({ min: 1, max: 10 }).chain(count => slidesArbitrary(count)),
-          exportFormatArbitrary,
+          allExportFormatArbitrary,
           (slides, format) => {
-            const requestBody = buildExportRequestBody(slides, format)
+            const requestBody = buildExportRequestBody({ slides, format, aspectRatio: '16:9' })
             
             // Property: Each slide should have image_base64 from imageBase64 field
             for (let i = 0; i < slides.length; i++) {
@@ -225,7 +216,7 @@ describe('Export Format Consistency Property Tests', () => {
       fc.assert(
         fc.property(
           fc.integer({ min: 2, max: 20 }).chain(count => slidesArbitrary(count)),
-          exportFormatArbitrary,
+          allExportFormatArbitrary,
           (slides, format) => {
             // Shuffle slides first
             const shuffled = [...slides].sort(() => Math.random() - 0.5)
@@ -236,7 +227,7 @@ describe('Export Format Consistency Property Tests', () => {
             expect(areSlidesInOrder(sorted)).toBe(true)
             
             // Build export request with sorted slides
-            const requestBody = buildExportRequestBody(sorted, format)
+            const requestBody = buildExportRequestBody({ slides: sorted, format, aspectRatio: '16:9' })
             
             // Property: Request should have same number of slides
             expect(requestBody.slides.length).toBe(sorted.length)
@@ -246,21 +237,52 @@ describe('Export Format Consistency Property Tests', () => {
       )
     })
 
-    /**
-     * Export format should only be pdf or pptx
-     */
     it('should only accept valid export formats', () => {
-      const validFormats: ExportFormat[] = ['pdf', 'pptx']
+      const validFormats: ExportFormat[] = ['pdf', 'pptx', 'generative_editable_pptx']
       
       fc.assert(
         fc.property(
-          exportFormatArbitrary,
+          allExportFormatArbitrary,
           (format) => {
             // Property: Format should be one of the valid formats
             expect(validFormats).toContain(format)
           }
         ),
         { numRuns: 50 }
+      )
+    })
+
+    it('should include generative editable PPTX ordering, metadata, and fail-fast fallback policy', () => {
+      fc.assert(
+        fc.property(
+          fc.integer({ min: 2, max: 10 }).chain(count => slidesArbitrary(count)),
+          (slides) => {
+            const slidesWithMetadata = slides.map((slide, index) => ({
+              ...slide,
+              textMetadata: [{
+                text: `Text ${index + 1}`,
+                role: index === 0 ? 'title' : 'body',
+                order: index + 1,
+                style_hint: { font_size: 20 + index }
+              }]
+            }))
+            const requestBody = buildExportRequestBody({
+              slides: slidesWithMetadata,
+              format: 'generative_editable_pptx',
+              aspectRatio: '4:3'
+            })
+
+            expect(requestBody.format).toBe('generative_editable_pptx')
+            expect(requestBody.aspect_ratio).toBe('4:3')
+            expect(requestBody.slide_order).toEqual(slidesWithMetadata.map(slide => slide.id))
+            expect(requestBody.editable_options).toEqual({ fallback_policy: 'fail' })
+            requestBody.slides.forEach((slide, index) => {
+              expect(slide.slide_id).toBe(slidesWithMetadata[index].id)
+              expect(slide.text_metadata).toEqual(slidesWithMetadata[index].textMetadata)
+            })
+          }
+        ),
+        { numRuns: 100 }
       )
     })
   })

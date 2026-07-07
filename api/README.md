@@ -7,7 +7,7 @@ FastAPI 后端服务，为 WebUI 前端提供 PPT 生成、编辑和导出功能
 - **文件上传**: 支持 `.md/.txt/.pdf/.docx/.pptx`，统一解析为 Markdown
 - **PPT 生成**: 基于输入材料生成 PPT 幻灯片，支持流式返回进度
 - **图生图编辑**: 对单页幻灯片进行修改
-- **导出功能**: 支持导出为 PDF 和 PPTX 格式
+- **导出功能**: 支持导出为 PDF、栅格 PPTX 和生成式高保真可编辑 PPTX 格式
 - **模型路由**: 支持 prompt/image/edit 三角色模型 profile
 
 ## API 端点
@@ -44,17 +44,15 @@ Content-Type: application/json
   "content": "Markdown 内容",
   "config": {
     "model_profiles": {
-      "prompt_model": {
+      "text_model": {
         "model": "DeepSeek-V4-Pro",
         "base_url": "https://api.example.com/v1",
-        "api_key": "your-text-key",
-        "adapter": "openai_chat"
+        "api_key": "your-text-key"
       },
       "image_model": {
         "model": "gpt-image-2",
         "base_url": "https://api.example.com/v1",
-        "api_key": "your-image-key",
-        "adapter": "raw_chat_multimodal"
+        "api_key": "your-image-key"
       }
     },
     "page_count": 10,
@@ -81,9 +79,9 @@ Content-Type: application/json
   "instruction": "修改指令",
   "config": {
     "model_profiles": {
-      "prompt_model": {"model": "DeepSeek-V4-Pro", "base_url": "https://api.example.com/v1", "api_key": "key", "adapter": "openai_chat"},
-      "image_model": {"model": "gpt-image-2", "base_url": "https://api.example.com/v1", "api_key": "key", "adapter": "raw_chat_multimodal"},
-      "edit_model": {"model": "gpt-image-2", "base_url": "https://api.example.com/v1", "api_key": "key", "adapter": "raw_chat_multimodal"}
+      "text_model": {"model": "DeepSeek-V4-Pro", "base_url": "https://api.example.com/v1", "api_key": "key"},
+      "image_model": {"model": "gpt-image-2", "base_url": "https://api.example.com/v1", "api_key": "key"},
+      "edit_model": {"model": "gpt-image-2", "base_url": "https://api.example.com/v1", "api_key": "key"}
     },
     "quality": "1K",
     "aspect_ratio": "16:9"
@@ -114,6 +112,51 @@ Content-Type: application/json
 
 响应: 文件下载
 ```
+
+#### 生成式高保真可编辑 PPTX
+
+该模式与普通 `pptx` 分开：普通 `pptx` 仍是把每页图片作为整页背景放入 PowerPoint；`generative_editable_pptx` 会通过 OCR、图片清理、前景资产重建、原生形状拟合和验证流程重建可编辑元素。
+
+```
+POST /api/export
+Content-Type: application/json
+
+请求体:
+{
+  "format": "generative_editable_pptx",
+  "aspect_ratio": "16:9",
+  "slide_order": ["slide-1", "slide-2"],
+  "editable_options": {
+    "fallback_policy": "fail"
+  },
+  "slides": [
+    {
+      "slide_id": "slide-1",
+      "image_base64": "base64编码的图片",
+      "text_metadata": [
+        {
+          "text": "Quarterly Plan",
+          "role": "title",
+          "order": 1,
+          "style_hint": {"font_size": 32, "bold": true}
+        }
+      ]
+    }
+  ]
+}
+```
+
+`fallback_policy` 可选值：
+- `fail`：默认。验证失败时返回错误，不返回低保真文件。
+- `text_editable_background`：显式允许使用文本可编辑、背景清理后的 fallback。
+- `raster_pptx`：显式允许降级到现有栅格 PPTX 导出。
+
+成功响应仍是 `.pptx` 文件下载。若使用 fallback，响应 header 会包含：
+- `X-Generative-Editable-Status`
+- `X-Generative-Editable-Fallback-Policy`
+- `X-Generative-Editable-Fallback-Used`
+
+更多配置和限制见 `docs/generative-editable-pptx.md`。
 
 ## 启动服务器
 

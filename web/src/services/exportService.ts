@@ -1,4 +1,4 @@
-import { Slide, ExportFormat, GenerationConfig } from '../types'
+import { Slide, ExportFormat, GenerationConfig, EditablePptxFallbackPolicy } from '../types'
 
 /**
  * 导出请求配置
@@ -7,6 +7,7 @@ export interface ExportRequestConfig {
   slides: Slide[]
   format: ExportFormat
   aspectRatio: GenerationConfig['aspectRatio']
+  fallbackPolicy?: EditablePptxFallbackPolicy
 }
 
 /**
@@ -19,14 +20,34 @@ export interface ExportCallbacks {
   onError?: (error: string) => void
 }
 
+type ExportRequestBody = {
+  slides: Array<{
+    image_base64: string
+    slide_id?: string
+    text_metadata?: Array<{
+      text: string
+      role: string
+      order: number
+      style_hint: Record<string, unknown>
+    }>
+  }>
+  format: ExportFormat
+  aspect_ratio: GenerationConfig['aspectRatio']
+  slide_order?: string[]
+  editable_options?: {
+    fallback_policy: EditablePptxFallbackPolicy
+  }
+}
+
 /**
  * 获取文件扩展名对应的 MIME 类型
  */
-function getMimeType(format: ExportFormat): string {
+export function getExportMimeType(format: ExportFormat): string {
   switch (format) {
     case 'pdf':
       return 'application/pdf'
     case 'pptx':
+    case 'generative_editable_pptx':
       return 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     default:
       return 'application/octet-stream'
@@ -36,9 +57,44 @@ function getMimeType(format: ExportFormat): string {
 /**
  * 获取默认文件名
  */
-function getDefaultFilename(format: ExportFormat): string {
-  const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
+export function getDefaultExportFilename(format: ExportFormat, now = new Date()): string {
+  const timestamp = now.toISOString().slice(0, 10).replace(/-/g, '')
+  if (format === 'generative_editable_pptx') {
+    return `presentation_${timestamp}.generative-editable.pptx`
+  }
   return `presentation_${timestamp}.${format}`
+}
+
+export function buildExportRequestBody(config: ExportRequestConfig): ExportRequestBody {
+  const { slides, format, aspectRatio, fallbackPolicy = 'fail' } = config
+  const baseSlides = slides.map(slide => ({
+    image_base64: slide.imageBase64 || extractBase64FromDataUrl(slide.imageUrl)
+  }))
+
+  if (format !== 'generative_editable_pptx') {
+    return {
+      slides: baseSlides,
+      format,
+      aspect_ratio: aspectRatio
+    }
+  }
+
+  return {
+    slides: slides.map(slide => ({
+      image_base64: slide.imageBase64 || extractBase64FromDataUrl(slide.imageUrl),
+      slide_id: slide.id,
+      text_metadata: (slide.textMetadata || []).map(item => ({
+        text: item.text,
+        role: item.role,
+        order: item.order,
+        style_hint: item.style_hint || {}
+      }))
+    })),
+    format,
+    aspect_ratio: aspectRatio,
+    slide_order: slides.map(slide => slide.id),
+    editable_options: { fallback_policy: fallbackPolicy }
+  }
 }
 
 /**
@@ -52,7 +108,7 @@ export async function exportPresentation(
   config: ExportRequestConfig,
   callbacks?: ExportCallbacks
 ): Promise<void> {
-  const { slides, format, aspectRatio } = config
+  const { slides, format, aspectRatio, fallbackPolicy } = config
 
   // 验证输入
   if (!slides || slides.length === 0) {
@@ -61,19 +117,16 @@ export async function exportPresentation(
   }
 
   callbacks?.onStart?.()
-  callbacks?.onProgress?.(10)
+  if (format !== 'generative_editable_pptx') {
+    callbacks?.onProgress?.(10)
+  }
 
   try {
-    // 构建请求体
-    const requestBody = {
-      slides: slides.map(slide => ({
-        image_base64: slide.imageBase64 || extractBase64FromDataUrl(slide.imageUrl)
-      })),
-      format,
-      aspect_ratio: aspectRatio
-    }
+    const requestBody = buildExportRequestBody({ slides, format, aspectRatio, fallbackPolicy })
 
-    callbacks?.onProgress?.(30)
+    if (format !== 'generative_editable_pptx') {
+      callbacks?.onProgress?.(30)
+    }
 
     // 发起请求
     const response = await fetch('/api/export', {
@@ -84,7 +137,9 @@ export async function exportPresentation(
       body: JSON.stringify(requestBody)
     })
 
-    callbacks?.onProgress?.(70)
+    if (format !== 'generative_editable_pptx') {
+      callbacks?.onProgress?.(70)
+    }
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({ detail: '导出失败' }))
@@ -93,7 +148,7 @@ export async function exportPresentation(
 
     // 获取文件名
     const contentDisposition = response.headers.get('Content-Disposition')
-    let filename = getDefaultFilename(format)
+    let filename = getDefaultExportFilename(format)
     if (contentDisposition) {
       const filenameMatch = contentDisposition.match(/filename="?([^";\n]+)"?/)
       if (filenameMatch) {
@@ -101,13 +156,17 @@ export async function exportPresentation(
       }
     }
 
-    callbacks?.onProgress?.(90)
+    if (format !== 'generative_editable_pptx') {
+      callbacks?.onProgress?.(90)
+    }
 
     // 下载文件
     const blob = await response.blob()
-    downloadBlob(blob, filename, getMimeType(format))
+    downloadBlob(blob, filename, getExportMimeType(format))
 
-    callbacks?.onProgress?.(100)
+    if (format !== 'generative_editable_pptx') {
+      callbacks?.onProgress?.(100)
+    }
     callbacks?.onComplete?.(filename)
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : '导出失败'

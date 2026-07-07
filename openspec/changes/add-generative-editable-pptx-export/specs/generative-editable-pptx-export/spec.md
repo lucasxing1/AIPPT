@@ -187,26 +187,34 @@ The system SHALL only use lower-fidelity fallback behavior when the request expl
 
 #### Scenario: Text-editable fallback policy
 - **WHEN** fallback policy is `text_editable_background` and full asset reconstruction fails
-- **THEN** the system MAY return a PPTX using the text-clean background plus editable text boxes and SHALL record that lower-fidelity fallback was used
+- **THEN** the system SHALL return a PPTX using the text-clean background plus editable text boxes when that fallback can be generated, and SHALL record that lower-fidelity fallback was used
+
+#### Scenario: Text-editable fallback fails
+- **WHEN** fallback policy is `text_editable_background` and the text-clean background fallback cannot be generated
+- **THEN** the system SHALL fail with the original reconstruction failure and the fallback failure reason
 
 #### Scenario: Raster fallback policy
 - **WHEN** fallback policy is `raster_pptx` and generative editable reconstruction fails
-- **THEN** the system MAY return the existing raster PPTX output and SHALL record that raster fallback was used
+- **THEN** the system SHALL return the existing raster PPTX output when that fallback can be generated, and SHALL record that raster fallback was used
+
+#### Scenario: Raster fallback fails
+- **WHEN** fallback policy is `raster_pptx` and the raster PPTX fallback cannot be generated
+- **THEN** the system SHALL fail with the original reconstruction failure and the fallback failure reason
 
 #### Scenario: Invalid fallback policy
 - **WHEN** a request sets fallback policy to any unsupported value
 - **THEN** the system SHALL reject the request with a clear validation error
 
 ### Requirement: Frontend export experience
-The system SHALL expose generative editable PPTX export from the frontend with distinct labeling, progress, and errors.
+The system SHALL expose generative editable PPTX export from the frontend with distinct labeling, synchronous loading state, and errors.
 
 #### Scenario: User selects generative editable PPTX
 - **WHEN** slides are exportable and the user chooses the high-fidelity editable PPTX export option
 - **THEN** the frontend SHALL send the generative editable export format, current slide images, slide order, aspect ratio, available text metadata, and selected fallback policy to the backend
 
-#### Scenario: Generative export reports progress
+#### Scenario: Generative export shows loading state
 - **WHEN** the generative editable export is running
-- **THEN** the frontend SHALL display progress and current stage without blocking existing slide viewing or project state
+- **THEN** the frontend SHALL display an indeterminate loading state without claiming backend stage progress and without blocking existing slide viewing or project state
 
 #### Scenario: Generative export fails validation
 - **WHEN** the backend returns a validation, configuration, provider, or repair-limit error

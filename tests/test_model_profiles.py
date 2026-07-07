@@ -13,7 +13,7 @@ class ModelProfileResolutionTest(unittest.TestCase):
     def test_edit_profile_inherits_image_profile_by_default(self):
         profiles = resolve_model_profiles(
             {
-                "prompt_model": {
+                "text_model": {
                     "id": "prompt",
                     "model": "DeepSeek-V4-Pro",
                     "base_url": "https://text.example/v1",
@@ -38,7 +38,7 @@ class ModelProfileResolutionTest(unittest.TestCase):
     def test_explicit_edit_profile_overrides_image_profile(self):
         profiles = resolve_model_profiles(
             {
-                "prompt_model": {"model": "text", "base_url": "https://t/v1", "api_key": "t"},
+                "text_model": {"model": "text", "base_url": "https://t/v1", "api_key": "t"},
                 "image_model": {"model": "image", "base_url": "https://i/v1", "api_key": "i"},
                 "edit_model": {
                     "model": "edit",
@@ -68,9 +68,48 @@ class ModelProfileResolutionTest(unittest.TestCase):
 
         public = profiles.to_public_dict()
 
-        self.assertEqual(public["prompt_model"]["api_key"], "SET")
+        self.assertEqual(public["text_model"]["api_key"], "SET")
         self.assertEqual(public["image_model"]["api_key"], "SET")
         self.assertEqual(public["edit_model"]["api_key"], "SET")
+        self.assertNotIn("adapter", public["text_model"])
+        self.assertNotIn("adapter", public["image_model"])
+        self.assertNotIn("adapter", public["edit_model"])
+
+    def test_text_profile_falls_back_to_vlm_when_text_model_is_omitted(self):
+        profiles = resolve_model_profiles(
+            {
+                "VLM": {
+                    "model": "gpt-5.5",
+                    "base_url": "https://vlm.example/v1",
+                    "api_key": "vlm-key",
+                },
+                "image_model": {
+                    "model": "image",
+                    "base_url": "https://image.example/v1",
+                    "api_key": "image-key",
+                },
+            }
+        )
+
+        self.assertEqual(profiles.prompt.model, "gpt-5.5")
+        self.assertEqual(profiles.prompt.base_url, "https://vlm.example/v1")
+        self.assertEqual(profiles.prompt.api_key, "vlm-key")
+        self.assertEqual(profiles.vlm.model, "gpt-5.5")
+
+    def test_optional_vlm_and_ocr_profiles_are_exposed_when_configured(self):
+        profiles = resolve_model_profiles(
+            {
+                "text_model": {"model": "text", "base_url": "https://t/v1", "api_key": "t"},
+                "image_model": {"model": "image", "base_url": "https://i/v1", "api_key": "i"},
+                "VLM": {"model": "vlm", "base_url": "https://v/v1", "api_key": "v"},
+                "ocr_model": {"model": "ocr", "base_url": "https://o/v1", "api_key": "o"},
+            }
+        )
+
+        public = profiles.to_public_dict()
+
+        self.assertEqual(public["VLM"]["api_key"], "SET")
+        self.assertEqual(public["ocr_model"]["api_key"], "SET")
 
     def test_default_profiles_do_not_load_external_env_file(self):
         self.assertIsNone(load_profiles_from_env())

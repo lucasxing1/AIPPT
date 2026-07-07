@@ -86,6 +86,31 @@ def _prompt_data_from_confirmed(request: GenerationRequest, ppt_config: PPTConfi
     )
 
 
+def _slide_text_metadata(slide_prompt) -> list[dict]:
+    metadata = []
+    title = str(getattr(slide_prompt, "title", "") or "").strip()
+    body = str(
+        getattr(slide_prompt, "display_content", "")
+        or getattr(slide_prompt, "content_summary", "")
+        or ""
+    ).strip()
+
+    if title:
+        metadata.append({"text": title, "role": "title", "order": 1, "style_hint": {}})
+
+    if body and body != title:
+        metadata.append(
+            {
+                "text": body,
+                "role": "body",
+                "order": len(metadata) + 1,
+                "style_hint": {},
+            }
+        )
+
+    return metadata
+
+
 def generate_single_slide_sync(
     client: ModelRouter,
     slide_prompt,
@@ -199,6 +224,7 @@ async def generate_stream(request: GenerationRequest) -> AsyncGenerator[str, Non
                             "prompt": slide_prompt.prompt
                             if hasattr(slide_prompt, "prompt")
                             else str(slide_prompt),
+                            "text_metadata": _slide_text_metadata(slide_prompt),
                         },
                     }
                     yield f"data: {json.dumps(slide_data)}\n\n"

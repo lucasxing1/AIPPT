@@ -34,5 +34,5 @@ This change intentionally does not modify the existing `add-editable-pptx-export
 - New backend modules for editable export configuration, job artifacts, manifests, OCR text extraction, background generation/cleanup, visual planning, asset-sheet generation, asset slicing, shape fitting, PPTX composition, preview rendering, validation, and orchestration.
 - Optional runtime integrations for OCR, image editing, and image generation providers, all behind testable provider interfaces.
 - `config.example.yaml` schema updates and local `config.yaml` loading for provider configuration.
-- Frontend export controls, progress/error display, and non-destructive failure handling for the new export option.
+- Frontend export controls, synchronous loading/error display, and non-destructive failure handling for the new export option.
 - Test suite expansion with TDD requirements for every implementation task, including fake providers for CI and manual live-provider verification gates.

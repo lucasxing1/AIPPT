@@ -64,9 +64,9 @@ Alternatives considered:
 - `api.models.ocr_model`
 - `api.models.image_model`
 - `api.models.edit_model`
-- `editable_pptx.generative.reconstruction`
-- `editable_pptx.generative.quality`
-- `editable_pptx.generative.timeouts`
+- `generative_editable_pptx.reconstruction`
+- `generative_editable_pptx.quality`
+- `generative_editable_pptx.timeouts`
 
 Real local values are read from `config.yaml`. Automated tests use fake providers and fixture images. Live provider verification is an explicit manual gate in the implementation tasks.
 
@@ -131,7 +131,7 @@ Alternatives considered:
 
 ### Decision 9: Validation gates results and fallback must be explicit
 
-The default fallback policy is `fail`. Validation checks page count, dimensions, required text, unsafe baked-text overlap, asset existence, object order, native text/shape structure, and preview similarity. If validation fails after bounded repairs, the API returns an error unless the request explicitly permits `text_editable_background` or `raster_pptx` fallback.
+The default fallback policy is `fail`. Validation checks page count, dimensions, required text, unsafe baked-text overlap, asset existence, object order, native text/shape structure, and preview similarity. If validation fails after bounded repairs, the API returns an error unless the request explicitly permits `text_editable_background` or `raster_pptx` fallback. When an explicit fallback is permitted and the fallback output can be generated, the API returns that fallback and records fallback-used metadata. If the fallback output itself cannot be generated, the API fails with the original failure and fallback failure details.
 
 Alternatives considered:
 
@@ -212,7 +212,7 @@ All implementation tasks follow TDD:
 - [Background editing removes desired visuals] -> Keep original, text-clean, and base-clean assets separately; validate preview similarity; allow text-editable fallback only when explicitly requested.
 - [Cost is higher than image-layer decomposition] -> Prioritize quality by default, then optimize through component reuse, page-level retries, caching, and optional fallback policies.
 - [Provider availability blocks development] -> Keep all providers behind interfaces and use fake providers in automated tests.
-- [Large decks are slow] -> Process pages in bounded workers, write intermediate artifacts to disk, and expose progress stages.
+- [Large decks are slow] -> Process pages in bounded workers, write intermediate artifacts to disk, keep the first version as a synchronous export with an indeterminate frontend loading state, and reserve stage-based progress for a later job/status API if needed.
 
 ## Migration Plan
 
@@ -224,9 +224,11 @@ All implementation tasks follow TDD:
 6. Request local provider configuration before live OCR/image edit/image generation verification.
 7. Keep rollback simple: hide or disable the generative editable export option while leaving existing PDF and raster PPTX exports unchanged.
 
-## Open Questions
+## Live Verification Status
 
-- Which OCR provider should be the first live target for local verification?
-- Which image edit/generation provider should be the first live target for background and asset-sheet generation?
-- What initial preview similarity thresholds are strict enough to protect quality without rejecting useful outputs too often?
-- Should live provider verification be limited to one-slide fixtures first, or include a small multi-slide deck before the feature is exposed in the UI?
+- Local verification targets are configured through project `config.yaml`; automated tests continue to use fake providers.
+- The initial strict live gate is one-slide first, followed by a small multi-slide deck only after the one-slide run passes.
+- The current configured OCR provider did not return schema-valid OCR JSON during strict one-slide smoke verification.
+- The current image generation provider returned an upstream `524` during direct provider smoke verification.
+- A diagnostic one-slide run with local OCR advanced into asset reconstruction, but the generated asset sheet failed strict asset QA with `edge_touch` and visible source drift.
+- The initial preview similarity threshold remains configurable through `generative_editable_pptx.quality.preview_similarity_threshold` and is recorded in the deck manifest for each run.

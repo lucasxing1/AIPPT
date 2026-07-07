@@ -1,7 +1,14 @@
 import unittest
 from unittest.mock import patch
 
-from api.models import EditConfig, GenerationConfig, ImageApiConfig, TextApiConfig
+from api.models import (
+    EditConfig,
+    GenerationConfig,
+    ImageApiConfig,
+    ModelProfileConfig,
+    ModelProfilesConfig,
+    TextApiConfig,
+)
 from api.profile_resolver import profiles_from_edit_config, profiles_from_generation_config
 from src.model_profiles import ModelProfile, ModelProfileSet
 
@@ -91,6 +98,34 @@ class ProfileResolverTest(unittest.TestCase):
 
         self.assertEqual(profiles.prompt.api_key, "override-text-key")
         self.assertEqual(profiles.image.api_key, "override-image-key")
+
+    def test_model_profile_requests_without_adapter_use_role_defaults(self):
+        config = GenerationConfig(
+            model_profiles=ModelProfilesConfig(
+                text_model=ModelProfileConfig(
+                    model="text",
+                    base_url="https://text.example/v1",
+                    api_key="text-key",
+                ),
+                image_model=ModelProfileConfig(
+                    model="image",
+                    base_url="https://image.example/v1",
+                    api_key="image-key",
+                ),
+                edit_model=ModelProfileConfig(
+                    model="edit",
+                    base_url="https://edit.example/v1",
+                    api_key="edit-key",
+                ),
+            ),
+            page_count=1,
+        )
+
+        profiles = profiles_from_generation_config(config)
+
+        self.assertEqual(profiles.prompt.adapter, "openai_chat")
+        self.assertEqual(profiles.image.adapter, "raw_chat_multimodal")
+        self.assertEqual(profiles.edit.adapter, "raw_chat_multimodal")
 
     def test_empty_edit_config_uses_backend_profiles(self):
         config = EditConfig(api_key="", base_url="", model="gpt-image-2")

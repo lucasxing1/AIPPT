@@ -2,7 +2,7 @@
 Pydantic 请求/响应模型定义
 """
 
-from typing import List, Optional, Literal
+from typing import Any, List, Optional, Literal
 from pydantic import BaseModel, Field
 
 
@@ -51,18 +51,24 @@ class ModelProfileConfig(BaseModel):
     model: str = Field(..., description="模型名称")
     base_url: str = Field(..., description="OpenAI-compatible Base URL")
     api_key: str = Field(..., description="API Key")
-    adapter: str = Field("openai_chat", description="适配器")
     thinking: Optional[Literal["enabled", "disabled"]] = Field(
         None, description="OpenAI-compatible thinking mode"
     )
 
 
 class ModelProfilesConfig(BaseModel):
-    """三角色模型配置"""
+    """模型 profile 配置"""
 
-    prompt_model: ModelProfileConfig
+    text_model: Optional[ModelProfileConfig] = None
+    prompt_model: Optional[ModelProfileConfig] = Field(None, description="旧字段，兼容 text_model")
     image_model: ModelProfileConfig
     edit_model: Optional[ModelProfileConfig] = None
+    VLM: Optional[ModelProfileConfig] = Field(
+        None, description="可选，多模态理解模型；图片转可编辑 PPTX 时使用"
+    )
+    ocr_model: Optional[ModelProfileConfig] = Field(
+        None, description="可选，OCR 模型；图片转可编辑 PPTX 时使用"
+    )
 
 
 class GenerationConfig(BaseModel):
@@ -226,6 +232,7 @@ class SlideData(BaseModel):
     page_number: int
     image_base64: str
     prompt: str
+    text_metadata: List["ExportTextMetadata"] = Field(default_factory=list)
 
 
 class GenerationProgressEvent(BaseModel):
@@ -293,14 +300,35 @@ class ExportSlide(BaseModel):
     """导出的幻灯片"""
 
     image_base64: str
+    slide_id: Optional[str] = None
+    text_metadata: List["ExportTextMetadata"] = Field(default_factory=list)
+
+
+class ExportTextMetadata(BaseModel):
+    """导出时附带的可编辑文本语义信息"""
+
+    text: str
+    role: str
+    order: int
+    style_hint: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExportEditableOptions(BaseModel):
+    """可编辑导出的附加选项"""
+
+    fallback_policy: Literal["fail", "text_editable_background", "raster_pptx"] = "fail"
 
 
 class ExportRequest(BaseModel):
     """导出请求"""
 
     slides: List[ExportSlide]
-    format: Literal["pdf", "pptx"] = Field(..., description="导出格式")
+    format: Literal["pdf", "pptx", "generative_editable_pptx"] = Field(
+        ..., description="导出格式"
+    )
     aspect_ratio: Literal["16:9", "4:3"] = Field("16:9", description="导出画幅比例")
+    slide_order: Optional[List[str]] = None
+    editable_options: ExportEditableOptions = Field(default_factory=ExportEditableOptions)
 
 
 class ExportResponse(BaseModel):

@@ -19,6 +19,7 @@ NotebookLM's PPT feature is closer to a one-click result generator, with limited
 - **Model control**: Configure separate OpenAI-compatible models for text planning, image generation, and image editing
 - **Local-first config**: Manage model connections through local `config.yaml` or WebUI local API configuration; saved projects and exported files do not include API keys
 - **Export-ready output**: Export generated decks to PDF/PPTX for presentation or further editing
+- **Experimental high-fidelity editable PPTX export**: Rebuild slide images into editable PowerPoint text boxes, conservative native shapes, and positioned bitmap assets through a provider-gated generative editable export path
 
 ## ✨ Features
 
@@ -29,6 +30,7 @@ NotebookLM's PPT feature is closer to a one-click result generator, with limited
 - 🔀 **Three model roles**: Configure `prompt_model`, `image_model`, and `edit_model` separately
 - 🖼️ **Image result compatibility**: Accepts URLs, Markdown image links, data URLs, `b64_json`, and raw base64
 - 💾 **Local multi-project persistence**: Save multiple PPT projects in the browser, including source content, outline, page designs, generated images, and per-slide edit history
+- 📤 **Editable PPTX reconstruction**: Export a separate experimental high-fidelity editable PPTX mode after provider verification; see [Generative Editable PPTX Export](docs/generative-editable-pptx.md)
 
 ## 🚀 Quick Start
 
@@ -102,6 +104,8 @@ Notes:
 6. **Preview & Edit**: Preview generated slides in the right panel and edit a single page when needed
 7. **Export**: Export to PDF or PPTX
 
+The export menu keeps the existing raster PPTX option and adds a separate experimental high-fidelity editable PPTX option. The editable mode uses OCR plus image editing/image generation providers and is quality-gated by default; it fails rather than silently returning a low-fidelity deck unless an explicit fallback policy is requested. Strict live provider verification is still pending for the currently tested provider set. See [Generative Editable PPTX Export](docs/generative-editable-pptx.md).
+
 The built-in demo source is `doc/L9.md`. This is a repository-relative path, so a fresh clone can use it directly in the WebUI or CLI examples.
 
 ## 📁 Project Structure
@@ -123,6 +127,7 @@ OpenNotebookLM-AIPPT/
 
 All configurations are managed in `config.yaml`, including:
 - API configuration (`prompt_model`, `image_model`, `edit_model`)
+- Generative editable PPTX provider roles and quality gates (`ocr_model`, cleanup, asset generation, repair, validation)
 - PPT default settings (language, style, page count)
 - Timeout and retry settings
 
@@ -130,21 +135,22 @@ See `config.example.yaml` for detailed configuration examples.
 
 ### Using OpenAI Compatible API
 
+The current protocol is OpenAI-compatible `/chat/completions`: text profiles use
+chat completions, and image/edit profiles use multimodal chat completions that
+return an image URL, data URL, or base64 payload.
+
 ```yaml
 api:
   models:
     prompt_model:
-      adapter: "openai_chat"
       model: "gpt-4o"
       base_url: "https://api.openai.com/v1"
       api_key: "sk-xxx"
     image_model:
-      adapter: "raw_chat_multimodal"
       model: "gpt-image-2"
       base_url: "https://api.example.com/v1"
       api_key: "sk-xxx"
     edit_model:
-      adapter: "raw_chat_multimodal"
       model: "gpt-image-2"
       base_url: "https://api.example.com/v1"
       api_key: "sk-xxx"

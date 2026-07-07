@@ -5,6 +5,7 @@ import {
   FullApiConfig,
   DeckOutline,
   ConfirmedSlidePrompt,
+  ExportTextMetadata,
 } from '../types'
 import { buildModelProfiles } from './modelProfileService'
 
@@ -23,6 +24,7 @@ export interface SSESlideData {
   page_number: number
   image_base64: string
   prompt: string
+  text_metadata?: ExportTextMetadata[]
 }
 
 export interface SSEErrorData {
@@ -90,12 +92,13 @@ function parseSSELine(line: string): { type: SSEEventType; data: unknown } | nul
 /**
  * 将后端返回的 slide 数据转换为前端 Slide 类型
  */
-function convertToSlide(data: SSESlideData): Slide {
+export function convertToSlide(data: SSESlideData): Slide {
   return {
     id: data.id,
     pageNumber: data.page_number,
     imageUrl: `data:image/png;base64,${data.image_base64}`,
     imageBase64: data.image_base64,
+    textMetadata: data.text_metadata || [],
     prompt: data.prompt,
   }
 }

@@ -21,6 +21,7 @@ node_modules/
 output/
 test_output/
 .playwright-cli/
+.vite/
 temp_buid_note/
 
 # 生成的文件

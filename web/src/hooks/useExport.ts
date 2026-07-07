@@ -9,6 +9,7 @@ export interface ExportState {
   isExporting: boolean
   progress: number
   error: string | null
+  format: ExportFormat | null
 }
 
 /**
@@ -34,7 +35,8 @@ export function useExport(
   const [state, setState] = useState<ExportState>({
     isExporting: false,
     progress: 0,
-    error: null
+    error: null,
+    format: null
   })
 
   const canExportSlides = canExport(slides)
@@ -51,7 +53,8 @@ export function useExport(
     setState({
       isExporting: true,
       progress: 0,
-      error: null
+      error: null,
+      format
     })
 
     try {
@@ -59,23 +62,30 @@ export function useExport(
         { slides, format, aspectRatio },
         {
           onStart: () => {
-            setState(prev => ({ ...prev, progress: 5 }))
+            setState(prev => ({
+              ...prev,
+              progress: format === 'generative_editable_pptx' ? 0 : 5
+            }))
           },
           onProgress: (progress) => {
-            setState(prev => ({ ...prev, progress }))
+            if (format !== 'generative_editable_pptx') {
+              setState(prev => ({ ...prev, progress }))
+            }
           },
           onComplete: () => {
             setState({
               isExporting: false,
               progress: 100,
-              error: null
+              error: null,
+              format: null
             })
           },
           onError: (error) => {
             setState({
               isExporting: false,
               progress: 0,
-              error
+              error,
+              format: null
             })
           }
         }

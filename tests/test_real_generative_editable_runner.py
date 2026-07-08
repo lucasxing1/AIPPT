@@ -3027,6 +3027,8 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
         self.assertEqual(stored["child"], "done")
 
     def test_isolated_pages_mode_writes_page_reports(self):
+        import scripts.run_real_generative_editable_pptx as runner
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             input_dir = root / "inputs"
@@ -3035,9 +3037,30 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             image = Image.new("RGB", (800, 450), "#FFFFFF")
             ImageDraw.Draw(image).rectangle((64, 36, 384, 81), fill="#2563EB")
             image.save(image_path)
+            captured_commands = []
+
+            def fake_subprocess(command, *, timeout_seconds, report_path, timeout_payload):
+                captured_commands.append(command)
+                page_result = {
+                    "status": "passed",
+                    "output_path": str(root / "out" / "page-01" / "isolated-page-01.pptx"),
+                    "artifact_root": str(
+                        root / "out" / "page-01" / "artifacts" / "isolated-page-01"
+                    ),
+                    "object_stats": {
+                        "slides": [{"index": 1, "shape_counts": {"TEXT_BOX": 1, "PICTURE": 1}}],
+                        "totals": {"TEXT_BOX": 1, "PICTURE": 1},
+                    },
+                }
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(json.dumps(page_result), encoding="utf-8")
+                return page_result
 
             stdout = io.StringIO()
-            with redirect_stdout(stdout):
+            with (
+                patch.object(runner, "_run_subprocess_json", side_effect=fake_subprocess),
+                redirect_stdout(stdout),
+            ):
                 exit_code = main(
                     [
                         "run",
@@ -3055,12 +3078,15 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             result = json.loads(stdout.getvalue().splitlines()[-1])
             report = json.loads(Path(result["report_path"]).read_text(encoding="utf-8"))
             page_report_exists = Path(report["page_reports"][0]["report_path"]).exists()
+            command = captured_commands[0]
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(report["status"], "passed")
         self.assertEqual(len(report["page_reports"]), 1)
         self.assertEqual(report["page_reports"][0]["page"], 1)
+        self.assertEqual(report["page_reports"][0]["object_stats"]["totals"]["TEXT_BOX"], 1)
         self.assertTrue(page_report_exists)
+        self.assertIn("--use-fake", command)
 
     def test_isolated_pages_top_level_report_includes_child_diagnostics(self):
         import scripts.run_real_generative_editable_pptx as runner

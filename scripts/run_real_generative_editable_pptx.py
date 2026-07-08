@@ -473,14 +473,17 @@ def _run_pipeline(args: argparse.Namespace, output_dir: Path) -> dict[str, Any]:
         artifact_root=job_dir,
         object_stats=object_stats,
     )
-    preview_reports = _write_preview_reports(
-        source_images=images,
-        pptx_path=result_output_path,
-        deck_manifest_path=deck_path,
-        artifact_root=job_dir,
-        similarity_threshold=dependencies.preview_similarity_threshold,
-        output_dir=output_dir / "previews",
-    )
+    if args.use_fake:
+        preview_reports = []
+    else:
+        preview_reports = _write_preview_reports(
+            source_images=images,
+            pptx_path=result_output_path,
+            deck_manifest_path=deck_path,
+            artifact_root=job_dir,
+            similarity_threshold=dependencies.preview_similarity_threshold,
+            output_dir=output_dir / "previews",
+        )
     status = _status_with_preview_reports(
         _status_with_reconstruction_issues(result.status, reconstruction_issues),
         preview_reports,

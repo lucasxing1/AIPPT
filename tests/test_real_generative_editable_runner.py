@@ -108,6 +108,8 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
         self.assertEqual([path.name for path in paths], ["slide_1.png", "slide_2.png"])
 
     def test_run_mode_accepts_sorted_input_glob_and_writes_report(self):
+        import scripts.run_real_generative_editable_pptx as runner
+
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             input_dir = root / "inputs"
@@ -118,7 +120,16 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
                 image.save(input_dir / name)
 
             stdout = io.StringIO()
-            with redirect_stdout(stdout):
+            with (
+                patch.object(
+                    runner,
+                    "_write_preview_reports",
+                    side_effect=AssertionError(
+                        "fake mode must not require desktop preview rendering"
+                    ),
+                ),
+                redirect_stdout(stdout),
+            ):
                 exit_code = main(
                     [
                         "run",

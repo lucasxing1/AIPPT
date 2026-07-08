@@ -574,14 +574,17 @@ def _run_vlm_pipeline(args: argparse.Namespace, output_dir: Path) -> dict[str, A
             artifact_root=job_dir,
             object_stats=object_stats,
         )
-        preview_reports = _write_preview_reports(
-            source_images=images,
-            pptx_path=result_output_path,
-            deck_manifest_path=deck_path,
-            artifact_root=job_dir,
-            similarity_threshold=getattr(dependencies, "preview_similarity_threshold", 0.92),
-            output_dir=output_dir / "previews",
-        )
+        if args.use_fake:
+            preview_reports = []
+        else:
+            preview_reports = _write_preview_reports(
+                source_images=images,
+                pptx_path=result_output_path,
+                deck_manifest_path=deck_path,
+                artifact_root=job_dir,
+                similarity_threshold=getattr(dependencies, "preview_similarity_threshold", 0.92),
+                output_dir=output_dir / "previews",
+            )
     else:
         reconstruction_issues = []
         preview_reports = []

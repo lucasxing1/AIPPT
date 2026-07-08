@@ -669,6 +669,7 @@ def _default_preview_validator(**kwargs) -> ValidationReport:
         page_index=kwargs["page_index"],
         max_mean_abs_delta=gates.max_mean_abs_delta,
         max_changed_pixel_ratio=gates.max_changed_pixel_ratio,
+        page_manifest=kwargs.get("page_manifest"),
     )
 
 
@@ -1828,6 +1829,7 @@ def _validate_pipeline_output(
                 page_index=page.page_index,
                 preview_similarity_threshold=dependencies.preview_similarity_threshold,
                 require_preview_validation=dependencies.require_preview_validation,
+                page_manifest=page,
             )
         )
         reports.extend(page_reports)
@@ -3695,7 +3697,6 @@ def _is_source_diff_native_fill_residual(
     source_scan_shapes: list[NativeShapeSpec],
     source_image: Image.Image,
 ) -> bool:
-    candidate_id = str(shape.provenance.get("candidate_id", ""))
     if _is_source_native_shape(shape):
         return False
     for container in source_scan_shapes:

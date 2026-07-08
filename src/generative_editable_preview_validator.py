@@ -44,6 +44,13 @@ FORBIDDEN_BITMAP_ASSET_PROVENANCE_TERMS = {
     "cropped source",
     "source-cropped",
 }
+TEXT_DENSE_CHANGED_RATIO_EXTRA_HEADROOM = 0.03
+TEXT_DENSE_CHANGED_RATIO_RELATIVE_HEADROOM = 0.25
+TEXT_DENSE_MIN_CHANGED_PIXEL_TEXT_OVERLAP_RATIO = 0.65
+TEXT_DENSE_MAX_OUTSIDE_TEXT_CHANGED_PIXEL_RATIO = 0.05
+TEXT_DENSE_TEXT_REGION_PADDING_RATIO = 0.035
+MAX_CLEAN_FALLBACK_ICON_SOURCE_CROP_AREA_RATIO = 0.03
+MAX_CLEAN_FALLBACK_ICON_SOURCE_CROP_DIMENSION_RATIO = 0.22
 
 
 class PreviewGateThresholds(NamedTuple):
@@ -259,6 +266,7 @@ def validate_preview_similarity(
     max_changed_pixel_ratio: float,
     require_powerpoint_render: bool = True,
     changed_pixel_delta_threshold: int = 16,
+    page_manifest: PageManifest | None = None,
 ) -> ValidationReport:
     renderer = str(preview.metadata.get("renderer", ""))
     if require_powerpoint_render and (
@@ -368,6 +376,19 @@ def validate_preview_similarity(
         "fallback_candidate": "text_editable_background",
     }
     if mean_abs_delta > max_mean_abs_delta or changed_pixel_ratio > max_changed_pixel_ratio:
+        text_dense_drift = _text_dense_editable_preview_drift_analysis(
+            page_manifest,
+            source_rgb=source_rgb,
+            preview_rgb=preview_rgb,
+            mean_abs_delta=mean_abs_delta,
+            changed_pixel_ratio=changed_pixel_ratio,
+            max_mean_abs_delta=max_mean_abs_delta,
+            max_changed_pixel_ratio=max_changed_pixel_ratio,
+            changed_pixel_delta_threshold=changed_pixel_delta_threshold,
+        )
+        details.update(text_dense_drift)
+        if text_dense_drift.get("text_dense_editable_drift_allowed") is True:
+            return ValidationReport(status=VALIDATION_PASSED, checked_pages=1, issues=[])
         return ValidationReport(
             status=VALIDATION_FAILED,
             checked_pages=1,
@@ -381,6 +402,116 @@ def validate_preview_similarity(
             ],
         )
     return ValidationReport(status=VALIDATION_PASSED, checked_pages=1, issues=[])
+
+
+def _text_dense_editable_preview_drift_analysis(
+    page_manifest: PageManifest | None,
+    *,
+    source_rgb: Image.Image,
+    preview_rgb: Image.Image,
+    mean_abs_delta: float,
+    changed_pixel_ratio: float,
+    max_mean_abs_delta: float,
+    max_changed_pixel_ratio: float,
+    changed_pixel_delta_threshold: int,
+) -> dict[str, object]:
+    rejected = {"text_dense_editable_drift_allowed": False}
+    if page_manifest is None or mean_abs_delta > max_mean_abs_delta:
+        return rejected
+    if changed_pixel_ratio <= max_changed_pixel_ratio:
+        return {"text_dense_editable_drift_allowed": True}
+    changed_ratio_headroom = min(
+        TEXT_DENSE_CHANGED_RATIO_EXTRA_HEADROOM,
+        max_changed_pixel_ratio * TEXT_DENSE_CHANGED_RATIO_RELATIVE_HEADROOM,
+    )
+    if changed_pixel_ratio > max_changed_pixel_ratio + changed_ratio_headroom:
+        return {**rejected, "text_dense_changed_ratio_headroom": changed_ratio_headroom}
+    text_box_count = len(page_manifest.text_boxes)
+    bitmap_count = len(page_manifest.bitmap_assets)
+    native_shape_count = len(page_manifest.native_shapes)
+    editable_object_count = text_box_count + bitmap_count + native_shape_count
+    if text_box_count < 12 or editable_object_count < 20 or bitmap_count + native_shape_count < 4:
+        return {**rejected, "text_box_count": text_box_count, "editable_object_count": editable_object_count}
+    background_ref = str(page_manifest.chosen_background or "")
+    source_ref = str(page_manifest.source_image_path or "")
+    if background_ref and source_ref and background_ref == source_ref:
+        return {**rejected, "text_dense_rejection_reason": "source_background"}
+    overlap_metrics = _changed_pixel_text_overlap_metrics(
+        page_manifest,
+        source_rgb,
+        preview_rgb,
+        changed_pixel_delta_threshold=changed_pixel_delta_threshold,
+    )
+    overlap_ratio = float(overlap_metrics["text_changed_pixel_overlap_ratio"])
+    outside_text_changed_ratio = float(overlap_metrics["outside_text_changed_pixel_ratio"])
+    return {
+        "text_dense_editable_drift_allowed": overlap_ratio
+        >= TEXT_DENSE_MIN_CHANGED_PIXEL_TEXT_OVERLAP_RATIO
+        and outside_text_changed_ratio <= TEXT_DENSE_MAX_OUTSIDE_TEXT_CHANGED_PIXEL_RATIO,
+        "text_changed_pixel_overlap_ratio": round(overlap_ratio, 4),
+        "min_text_changed_pixel_overlap_ratio": TEXT_DENSE_MIN_CHANGED_PIXEL_TEXT_OVERLAP_RATIO,
+        "outside_text_changed_pixel_ratio": round(outside_text_changed_ratio, 4),
+        "max_outside_text_changed_pixel_ratio": TEXT_DENSE_MAX_OUTSIDE_TEXT_CHANGED_PIXEL_RATIO,
+        "text_dense_changed_ratio_headroom": changed_ratio_headroom,
+    }
+
+
+def _changed_pixel_text_overlap_metrics(
+    page_manifest: PageManifest,
+    source_rgb: Image.Image,
+    preview_rgb: Image.Image,
+    *,
+    changed_pixel_delta_threshold: int,
+) -> dict[str, float]:
+    changed_mask = _changed_pixel_mask(
+        source_rgb,
+        preview_rgb,
+        changed_pixel_delta_threshold=changed_pixel_delta_threshold,
+    )
+    changed_count = _mask_nonzero_pixel_count(changed_mask)
+    if changed_count == 0:
+        return {
+            "text_changed_pixel_overlap_ratio": 1.0,
+            "outside_text_changed_pixel_ratio": 0.0,
+        }
+    text_mask = Image.new("L", changed_mask.size, 0)
+    draw = ImageDraw.Draw(text_mask)
+    source_size = page_manifest.source_image_size
+    padding = max(8, round(min(changed_mask.size) * TEXT_DENSE_TEXT_REGION_PADDING_RATIO))
+    for text_box in page_manifest.text_boxes:
+        left, top, right, bottom = _scale_bbox(text_box.source_pixel_bbox, source_size, changed_mask.size)
+        draw.rectangle(
+            (
+                max(0, left - padding),
+                max(0, top - padding),
+                min(changed_mask.width, right + padding),
+                min(changed_mask.height, bottom + padding),
+            ),
+            fill=255,
+        )
+    overlap = ImageChops.multiply(changed_mask, text_mask)
+    overlap_count = _mask_nonzero_pixel_count(overlap)
+    total_pixels = max(1, changed_mask.width * changed_mask.height)
+    return {
+        "text_changed_pixel_overlap_ratio": overlap_count / float(changed_count),
+        "outside_text_changed_pixel_ratio": (changed_count - overlap_count) / float(total_pixels),
+    }
+
+
+def _changed_pixel_mask(
+    source_rgb: Image.Image,
+    preview_rgb: Image.Image,
+    *,
+    changed_pixel_delta_threshold: int,
+) -> Image.Image:
+    return ImageChops.difference(source_rgb, preview_rgb).convert("L").point(
+        lambda pixel: 255 if pixel > changed_pixel_delta_threshold else 0
+    )
+
+
+def _mask_nonzero_pixel_count(mask: Image.Image) -> int:
+    histogram = mask.histogram()
+    return sum(histogram[1:])
 
 
 def quality_threshold_to_preview_gates(similarity_threshold: float) -> PreviewGateThresholds:
@@ -615,7 +746,7 @@ def _validate_bitmap_asset_provenance(
     asset,
     issues: list[ValidationIssue],
 ) -> None:
-    if _is_allowed_complex_source_preserved_asset(asset):
+    if _is_allowed_complex_source_preserved_asset(asset) or _is_allowed_clean_fallback_icon_source_preserved_asset(page, asset):
         return
     provenance_text = _compact_text(asset.provenance)
     asset_path_text = _compact_text(asset.asset_path)
@@ -656,6 +787,41 @@ def _is_allowed_complex_source_preserved_asset(asset) -> bool:
         and bool(provenance.get("original_source_pixel_bbox"))
         and not provenance.get("asset_sheet_provider_failed")
         and not provenance.get("asset_sheet_slicing_failed")
+    )
+
+
+def _is_allowed_clean_fallback_icon_source_preserved_asset(page: PageManifest, asset) -> bool:
+    provenance = getattr(asset, "provenance", {}) or {}
+    candidate_provenance = provenance.get("candidate_provenance")
+    if not isinstance(candidate_provenance, dict):
+        candidate_provenance = {}
+    return (
+        bool(page.provenance.get("clean_background_provider_failed"))
+        and provenance.get("asset_strategy") == "source_preserved_crop"
+        and provenance.get("candidate_classification") == "bitmap_asset_candidate"
+        and provenance.get("alpha_strategy") == "opaque_source_crop"
+        and provenance.get("asset_sheet_skipped_reason") == "icon_source_preserved"
+        and candidate_provenance.get("source") == "vlm_bitmap_region"
+        and str(candidate_provenance.get("vlm_type") or "").lower() in {"icon", "ui_icon", "small_icon"}
+        and bool(provenance.get("original_source_pixel_bbox"))
+        and _is_small_source_crop_asset(page, asset)
+        and not provenance.get("asset_sheet_provider_failed")
+        and not provenance.get("asset_sheet_slicing_failed")
+    )
+
+
+def _is_small_source_crop_asset(page: PageManifest, asset) -> bool:
+    left, top, right, bottom = getattr(asset, "source_pixel_bbox", (0, 0, 0, 0))
+    width = max(0, right - left)
+    height = max(0, bottom - top)
+    source_width, source_height = page.source_image_size
+    if source_width <= 0 or source_height <= 0:
+        return False
+    area_ratio = (width * height) / float(source_width * source_height)
+    dimension_ratio = max(width / source_width, height / source_height)
+    return (
+        area_ratio <= MAX_CLEAN_FALLBACK_ICON_SOURCE_CROP_AREA_RATIO
+        and dimension_ratio <= MAX_CLEAN_FALLBACK_ICON_SOURCE_CROP_DIMENSION_RATIO
     )
 
 

@@ -77,6 +77,9 @@ MIN_BITMAP_REGION_AREA_RATIO = 0.0004
 MAX_BITMAP_ELEMENT_AREA_RATIO = 0.72
 MAX_BITMAP_ELEMENT_WIDTH_RATIO = 0.92
 MAX_BITMAP_ELEMENT_HEIGHT_RATIO = 0.72
+CLEAN_FALLBACK_LOCAL_ICON_KINDS = frozenset({"icon", "ui_icon", "small_icon"})
+MAX_CLEAN_FALLBACK_LOCAL_ICON_AREA_RATIO = 0.03
+MAX_CLEAN_FALLBACK_LOCAL_ICON_DIMENSION_RATIO = 0.22
 ASSET_SHEET_PROVIDER_TIMEOUT_SECONDS = 120
 COMPLEX_BITMAP_MASK_KINDS = frozenset({"photo", "product", "component", "complex"})
 CONDITIONAL_COMPLEX_BITMAP_MASK_KINDS = frozenset({"other", "qr"})
@@ -356,6 +359,7 @@ def _default_vlm_preview_validator(**kwargs) -> ValidationReport:
         page_index=kwargs["page_index"],
         max_mean_abs_delta=gates.max_mean_abs_delta,
         max_changed_pixel_ratio=gates.max_changed_pixel_ratio,
+        page_manifest=kwargs.get("page_manifest"),
     )
 
 
@@ -499,6 +503,7 @@ def _validate_vlm_pipeline_output(
                 pptx_path=pptx_path,
                 preview_similarity_threshold=dependencies.preview_similarity_threshold,
                 require_preview_validation=dependencies.require_preview_validation,
+                page_manifest=page,
             )
         )
     return _merge_validation_reports(reports, checked_pages=len(page_manifests))
@@ -982,7 +987,11 @@ def _build_vlm_page_manifest(
             asset_root=artifacts.job_dir,
             edit_provider=dependencies.image_edit_provider,
             timeout_seconds=clean_timeout,
-            cleanup_bboxes=[box.bbox for box in mask_boxes],
+            cleanup_bboxes=_local_clean_background_bboxes(
+                mask_boxes,
+                analysis,
+                mapper,
+            ),
         )
         page_deadline.check("vlm_clean_background")
     asset_sheet_provider = dependencies.asset_sheet_image_edit_provider or dependencies.image_edit_provider
@@ -1009,6 +1018,7 @@ def _build_vlm_page_manifest(
             edit_provider=asset_sheet_provider,
             timeout_seconds=asset_sheet_timeout_seconds,
             additional_text_bboxes=protected_text_bboxes,
+            force_opaque_source_crops=bool(clean_background.provenance.get("provider_failed")),
         )
         page_deadline.check("vlm_asset_sheet")
     vlm_output_path = artifacts.write_provider_output(
@@ -1218,6 +1228,47 @@ def build_text_bitmap_mask(
         draw.rectangle(clamped, fill=255)
         boxes.append(MaskBox(kind="ocr_text", region_id=f"ocr-{index}", bbox=clamped))
     return mask, boxes
+
+
+def _local_clean_background_bboxes(
+    mask_boxes: list[MaskBox],
+    analysis: VLMPageAnalysis,
+    mapper: VLMCoordinateMapper,
+) -> list[PixelBBox]:
+    bitmap_regions = {region.region_id: region for region in analysis.bitmap_regions}
+    cleanup_bboxes: list[PixelBBox] = []
+    for box in mask_boxes:
+        if box.kind in {"text", "ocr_text"}:
+            cleanup_bboxes.append(box.bbox)
+            continue
+        if box.kind != "bitmap":
+            continue
+        region = bitmap_regions.get(box.region_id)
+        if region is None:
+            continue
+        unpadded_bbox = mapper.to_source_bbox(region.bbox, padding=0)
+        if _is_local_cleanable_fallback_icon(region, unpadded_bbox, mapper.source_image_size):
+            cleanup_bboxes.append(unpadded_bbox)
+    return cleanup_bboxes
+
+
+def _is_local_cleanable_fallback_icon(
+    region: VLMBitmapRegion,
+    bbox: PixelBBox,
+    source_image_size: tuple[int, int],
+) -> bool:
+    if region.kind.lower() not in CLEAN_FALLBACK_LOCAL_ICON_KINDS:
+        return False
+    width = max(0, bbox[2] - bbox[0])
+    height = max(0, bbox[3] - bbox[1])
+    source_width = max(1, source_image_size[0])
+    source_height = max(1, source_image_size[1])
+    area_ratio = (width * height) / float(source_width * source_height)
+    dimension_ratio = max(width / source_width, height / source_height)
+    return (
+        area_ratio <= MAX_CLEAN_FALLBACK_LOCAL_ICON_AREA_RATIO
+        and dimension_ratio <= MAX_CLEAN_FALLBACK_LOCAL_ICON_DIMENSION_RATIO
+    )
 
 
 def _protected_mask_bboxes(
@@ -1704,14 +1755,30 @@ def _is_short_text(text: str) -> bool:
 def _should_keep_ocr_layout_for_exact_text(ocr_box: TextBoxSpec, vlm_box: TextBoxSpec) -> bool:
     if not _normalized_texts_are_exact_duplicate(ocr_box.text, vlm_box.text):
         return False
+    vertical_center_close = _vertical_center_distance(ocr_box.source_pixel_bbox, vlm_box.source_pixel_bbox) <= max(
+        ocr_box.source_pixel_bbox[3] - ocr_box.source_pixel_bbox[1],
+        vlm_box.source_pixel_bbox[3] - vlm_box.source_pixel_bbox[1],
+    )
+    ocr_width = ocr_box.source_pixel_bbox[2] - ocr_box.source_pixel_bbox[0]
+    vlm_width = vlm_box.source_pixel_bbox[2] - vlm_box.source_pixel_bbox[0]
+    if (
+        vertical_center_close
+        and ocr_width >= vlm_width * 1.15
+        and ocr_box.source_pixel_bbox[0] < vlm_box.source_pixel_bbox[0]
+    ):
+        return True
+    if (
+        vertical_center_close
+        and len(_normalize_text_for_match(ocr_box.text)) >= 8
+        and ocr_box.source_pixel_bbox[0] <= vlm_box.source_pixel_bbox[0] - max(24, int(vlm_width * 0.05))
+        and ocr_width >= vlm_width * 0.90
+    ):
+        return True
     overlap = _bbox_intersection_area(ocr_box.source_pixel_bbox, vlm_box.source_pixel_bbox)
     smaller_area = min(_bbox_area(ocr_box.source_pixel_bbox), _bbox_area(vlm_box.source_pixel_bbox))
     if overlap / max(1, smaller_area) >= 0.45:
         return False
-    return _vertical_center_distance(ocr_box.source_pixel_bbox, vlm_box.source_pixel_bbox) <= max(
-        ocr_box.source_pixel_bbox[3] - ocr_box.source_pixel_bbox[1],
-        vlm_box.source_pixel_bbox[3] - vlm_box.source_pixel_bbox[1],
-    )
+    return vertical_center_close
 
 
 def _vertical_center_distance(left: PixelBBox, right: PixelBBox) -> float:
@@ -1904,6 +1971,7 @@ def _create_vlm_asset_sheet_assets(
     edit_provider: ImageEditProvider,
     timeout_seconds: int,
     additional_text_bboxes: list[PixelBBox] | None = None,
+    force_opaque_source_crops: bool = False,
 ) -> tuple[list[BitmapAssetSpec], list[AssetSheetSpec], Path | None]:
     text_bboxes = [
         mapper.to_source_bbox(region.bbox, padding=8)
@@ -1934,6 +2002,7 @@ def _create_vlm_asset_sheet_assets(
         page_index=page_index,
         reason="source_preserved_bitmap_region",
         transparent_bboxes=text_bboxes,
+        force_opaque_source_crops=force_opaque_source_crops,
     )
     if not asset_sheet_candidates:
         return _with_candidate_z_order(source_preserved_assets, candidates), [], None
@@ -1959,6 +2028,7 @@ def _create_vlm_asset_sheet_assets(
             reason=str(exc),
             asset_sheet_provider_failed=True,
             transparent_bboxes=text_bboxes,
+            force_opaque_source_crops=force_opaque_source_crops,
         )
         provider_output_path = artifacts.write_provider_output(
             slide_id,
@@ -1994,6 +2064,7 @@ def _create_vlm_asset_sheet_assets(
             reason=str(exc),
             asset_sheet_slicing_failed=True,
             transparent_bboxes=text_bboxes,
+            force_opaque_source_crops=force_opaque_source_crops,
         )
         provider_output_path = artifacts.write_provider_output(
             slide_id,
@@ -2119,6 +2190,7 @@ def _source_preserved_bitmap_assets_from_candidates(
     asset_sheet_skipped_reason: str = "",
     fallback_padding: int = 8,
     transparent_bboxes: list[PixelBBox] | None = None,
+    force_opaque_source_crops: bool = False,
 ) -> list[BitmapAssetSpec]:
     if not candidates:
         return []
@@ -2137,7 +2209,7 @@ def _source_preserved_bitmap_assets_from_candidates(
                 _pad_bbox(candidate.source_pixel_bbox, fallback_padding),
                 source_rgb.size,
             )
-            use_opaque_crop = candidate.classification == "complex_whole_visual"
+            use_opaque_crop = force_opaque_source_crops or candidate.classification == "complex_whole_visual"
             if use_opaque_crop:
                 crop = source_rgb.crop(bbox).convert("RGBA")
                 _clear_crop_regions(crop, bbox, transparent_bboxes or [])
@@ -2574,6 +2646,7 @@ def _create_local_vlm_clean_background_fallback(
         text_bboxes=cleanup_bboxes,
         output_asset_path=output_asset_path,
         asset_root=asset_root,
+        prefer_inpaint=True,
     )
     return replace(
         result,

@@ -16,6 +16,7 @@ from .generative_editable_providers import ImageEditProvider, ImageEditRequest, 
 BackgroundStrategy = Literal["local_fill", "local_inpaint", "image_edit"]
 MAX_LOCAL_FILL_AREA_RATIO = 0.12
 MAX_LOCAL_INPAINT_AREA_RATIO = 0.03
+MAX_SOURCE_PRESERVING_LOCAL_INPAINT_AREA_RATIO = 0.20
 MIN_BORDER_SAMPLE_PIXELS = 8
 LOCAL_FILL_BORDER_STDDEV_THRESHOLD = 1.5
 
@@ -192,6 +193,7 @@ def create_source_preserving_text_background(
     text_bboxes: list[tuple[int, int, int, int]],
     output_asset_path: str | Path,
     asset_root: str | Path,
+    prefer_inpaint: bool = False,
 ) -> BackgroundResult:
     source_path = Path(source_image_path)
     output_path = Path(output_asset_path)
@@ -204,19 +206,40 @@ def create_source_preserving_text_background(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(source_path) as source:
         cleaned = source.convert("RGB")
-        for bbox in text_bboxes:
-            _fill_bbox_from_border(cleaned, bbox)
+        if prefer_inpaint and text_bboxes:
+            mask = Image.new("L", cleaned.size, 0)
+            draw = ImageDraw.Draw(mask)
+            for bbox in text_bboxes:
+                left, top, right, bottom = _clamp_bbox(bbox, cleaned.size)
+                if right > left and bottom > top:
+                    draw.rectangle((left, top, right, bottom), fill=255)
+            mask_pixels = _count_mask_pixels(mask)
+            area_ratio = mask_pixels / float(mask.width * mask.height)
+            if area_ratio <= MAX_SOURCE_PRESERVING_LOCAL_INPAINT_AREA_RATIO:
+                cleaned = _local_inpaint(cleaned, mask)
+                strategy: BackgroundStrategy = "local_inpaint"
+                decision = "source preserving local inpaint cleanup"
+            else:
+                for bbox in text_bboxes:
+                    _fill_bbox_from_border(cleaned, bbox)
+                strategy = "local_fill"
+                decision = "source preserving local text cleanup"
+        else:
+            for bbox in text_bboxes:
+                _fill_bbox_from_border(cleaned, bbox)
+            strategy = "local_fill"
+            decision = "source preserving local text cleanup"
         cleaned.save(output_path)
     return BackgroundResult(
         output_asset_path=str(output_path),
         artifact_path=_artifact_ref(output_path, artifact_root),
-        strategy="local_fill",
+        strategy=strategy,
         provider_role="local",
         prompt_id="source_preserving_text_background",
         input_asset_refs=[_artifact_ref(source_path, artifact_root)],
         validation_status="passed",
         provenance={
-            "decision": "source preserving local text cleanup",
+            "decision": decision,
             "text_bbox_count": len(text_bboxes),
         },
     )

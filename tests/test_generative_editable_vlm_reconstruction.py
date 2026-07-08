@@ -1042,6 +1042,47 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual(assets[0].provenance["alpha_strategy"], "opaque_source_crop")
         self.assertNotIn("background_difference_alpha", assets[0].provenance)
 
+    def test_source_preserved_icons_can_force_opaque_crop_when_background_is_untrusted(self):
+        from src.generative_editable_foreground_planner import ForegroundCandidate
+        from src.generative_editable_vlm_reconstruction import (
+            _source_preserved_bitmap_assets_from_candidates,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            source_image = Image.new("RGB", (120, 80), "#001122")
+            ImageDraw.Draw(source_image).rectangle((30, 18, 48, 36), fill="#FFFFFF")
+            source_image.save(source)
+            source_image.save(background)
+            candidate = ForegroundCandidate(
+                candidate_id="icon",
+                source_pixel_bbox=(30, 18, 48, 36),
+                area=324,
+                classification="bitmap_asset_candidate",
+                provenance={"vlm_type": "icon"},
+            )
+
+            assets = _source_preserved_bitmap_assets_from_candidates(
+                candidates=[candidate],
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                slide_id="slide-a",
+                page_index=0,
+                reason="untrusted_clean_background",
+                asset_sheet_skipped_reason="icon_source_preserved",
+                force_opaque_source_crops=True,
+            )
+            crop = Image.open(root / assets[0].asset_path).convert("RGBA")
+
+        self.assertEqual(crop.getpixel((0, 0))[3], 255)
+        self.assertEqual(assets[0].provenance["alpha_strategy"], "opaque_source_crop")
+        self.assertNotIn("background_difference_alpha", assets[0].provenance)
+
     def test_foreground_crop_preserves_edge_foreground_close_to_background(self):
         from src.generative_editable_vlm_reconstruction import _foreground_rgba_crop
 
@@ -2199,6 +2240,112 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual(page.text_boxes[0].source_pixel_bbox, (1292, 575, 1340, 595))
         self.assertEqual(page.text_boxes[0].provenance["layout_source"], "ocr")
 
+    def test_vlm_text_resolution_uses_wider_ocr_layout_for_exact_long_title(self):
+        from src.generative_editable_manifest import TextBoxSpec
+        from src.generative_editable_vlm_reconstruction import (
+            build_page_manifest_from_vlm_analysis,
+            coerce_vlm_analysis,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            Image.new("RGB", (1672, 941), "#001122").save(source)
+            Image.new("RGB", (1672, 941), "#001122").save(background)
+            analysis = coerce_vlm_analysis(
+                {
+                    "coordinate_space": {"width": 1672, "height": 941, "unit": "px"},
+                    "text_regions": [
+                        {
+                            "id": "title",
+                            "text": "落地建议：用车、补能与维护的最佳实践",
+                            "bbox": [431, 20, 1241, 76],
+                            "role": "title",
+                            "confidence": 0.95,
+                        }
+                    ],
+                    "bitmap_regions": [],
+                    "shape_regions": [],
+                }
+            )
+            ocr_title = TextBoxSpec(
+                text="落地建议：用车、补能与维护的最佳实践",
+                source_pixel_bbox=(296, 22, 1283, 76),
+                source_pixel_polygon=((296, 22), (1283, 22), (1283, 76), (296, 76)),
+                font_size=18,
+                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+            )
+
+            page = build_page_manifest_from_vlm_analysis(
+                analysis=analysis,
+                slide_id="slide-a",
+                page_index=0,
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                aspect_ratio="16:9",
+                text_boxes=[ocr_title],
+            )
+
+        self.assertEqual(page.text_boxes[0].source_pixel_bbox, (296, 22, 1283, 76))
+        self.assertEqual(page.text_boxes[0].provenance["layout_source"], "ocr")
+
+    def test_vlm_text_resolution_uses_left_shifted_ocr_layout_for_exact_long_title(self):
+        from src.generative_editable_manifest import TextBoxSpec
+        from src.generative_editable_vlm_reconstruction import (
+            build_page_manifest_from_vlm_analysis,
+            coerce_vlm_analysis,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            Image.new("RGB", (1672, 941), "#001122").save(source)
+            Image.new("RGB", (1672, 941), "#001122").save(background)
+            analysis = coerce_vlm_analysis(
+                {
+                    "coordinate_space": {"width": 1672, "height": 941, "unit": "px"},
+                    "text_regions": [
+                        {
+                            "id": "title",
+                            "text": "落地建议：用车、补能与维护的最佳实践",
+                            "bbox": [359, 22, 1315, 76],
+                            "role": "title",
+                            "confidence": 0.95,
+                        }
+                    ],
+                    "bitmap_regions": [],
+                    "shape_regions": [],
+                }
+            )
+            ocr_title = TextBoxSpec(
+                text="落地建议：用车、补能与维护的最佳实践",
+                source_pixel_bbox=(296, 22, 1283, 76),
+                source_pixel_polygon=((296, 22), (1283, 22), (1283, 76), (296, 76)),
+                font_size=18,
+                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+            )
+
+            page = build_page_manifest_from_vlm_analysis(
+                analysis=analysis,
+                slide_id="slide-a",
+                page_index=0,
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                aspect_ratio="16:9",
+                text_boxes=[ocr_title],
+            )
+
+        self.assertEqual(page.text_boxes[0].source_pixel_bbox, (296, 22, 1283, 76))
+        self.assertEqual(page.text_boxes[0].provenance["layout_source"], "ocr")
+
     def test_vlm_fallback_does_not_duplicate_nearby_ocr_text_line(self):
         from src.generative_editable_manifest import TextBoxSpec
         from src.generative_editable_vlm_reconstruction import (
@@ -2841,6 +2988,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         ],
                         "bitmap_regions": [
                             {"id": "product", "type": "product", "bbox": [44, 24, 102, 64]},
+                            {"id": "small-icon", "type": "icon", "bbox": [112, 30, 124, 42]},
                         ],
                         "shape_regions": [
                             {"id": "divider", "type": "line", "bbox": [10, 72, 150, 73]},
@@ -2877,6 +3025,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             draw = ImageDraw.Draw(image)
             draw.text((14, 8), "标题", fill="#FFFFFF")
             draw.rectangle((44, 24, 102, 64), fill="#22AAFF")
+            draw.rectangle((112, 30, 124, 42), fill="#FF3344")
             draw.line((10, 72, 150, 72), fill="#55CCFF", width=1)
             image.save(source)
             output = root / "out.pptx"
@@ -2901,6 +3050,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             job_dir = root / "artifacts" / "job-clean-fallback"
             deck = read_deck_manifest(job_dir / "deck.json")
             page = read_page_manifest(job_dir / deck.page_manifest_paths[0])
+            clean_background_path = job_dir / page.chosen_background
+            with Image.open(clean_background_path) as clean_background:
+                cleaned_icon_pixel = clean_background.convert("RGB").getpixel((116, 34))
             prs = Presentation(str(output))
             shape_types = [shape.shape_type for shape in prs.slides[0].shapes]
 
@@ -2908,7 +3060,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual(result.fallback_used, "clean_background_local")
         self.assertEqual(page.provider_output_paths["image_edit"], "provider_outputs/image_edit/0000-slide-a/backgrounds.json")
         self.assertTrue(page.provenance["clean_background_provider_failed"])
-        self.assertEqual(page.provenance["clean_background_strategy"], "local_fill")
+        self.assertEqual(page.provenance["clean_background_strategy"], "local_inpaint")
+        self.assertNotEqual(cleaned_icon_pixel, (255, 51, 68))
         self.assertGreaterEqual(len(page.text_boxes), 1)
         self.assertGreaterEqual(len(page.bitmap_assets), 1)
         self.assertIn(MSO_SHAPE_TYPE.TEXT_BOX, shape_types)

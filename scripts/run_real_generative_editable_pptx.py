@@ -774,7 +774,7 @@ def _run_subprocess_json(
         if not report_path.exists():
             _write_json(report_path, result)
         return result
-    except subprocess.TimeoutExpired as exc:
+    except subprocess.TimeoutExpired:
         _kill_process_tree(process.pid)
         _finish_timed_out_process(process)
         existing_result = _read_existing_report(report_path)
@@ -1779,6 +1779,7 @@ def _write_preview_reports(
             max_mean_abs_delta=gates.max_mean_abs_delta,
             max_changed_pixel_ratio=gates.max_changed_pixel_ratio,
             require_powerpoint_render=True,
+            page_manifest=page,
         )
         reports.append(
             {

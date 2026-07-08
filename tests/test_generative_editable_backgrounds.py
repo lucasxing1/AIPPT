@@ -206,6 +206,29 @@ class GenerativeEditableBackgroundsTest(unittest.TestCase):
         self.assertEqual(visual_pixel, (125, 135, 150))
         self.assertNotEqual(cleaned_text_pixel, (255, 255, 255))
 
+    def test_source_preserving_text_background_does_not_inpaint_large_masks(self):
+        from src.generative_editable_backgrounds import create_source_preserving_text_background
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "slide.png"
+            output = root / "backgrounds" / "0000-slide-a" / "source-preserving.png"
+            source.parent.mkdir(parents=True)
+            image = Image.new("RGB", (220, 120), "#041225")
+            ImageDraw.Draw(image).rectangle((20, 20, 190, 95), fill="#FFFFFF")
+            image.save(source)
+
+            result = create_source_preserving_text_background(
+                source_image_path=source,
+                text_bboxes=[(20, 20, 190, 95)],
+                output_asset_path=output,
+                asset_root=root,
+                prefer_inpaint=True,
+            )
+
+        self.assertEqual(result.strategy, "local_fill")
+        self.assertEqual(result.provenance["decision"], "source preserving local text cleanup")
+
     def test_source_raster_background_copies_source_without_cleanup(self):
         from src.generative_editable_backgrounds import create_source_raster_background
 

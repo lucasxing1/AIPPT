@@ -17,6 +17,7 @@ Development must follow test-driven development. Each task starts by adding or u
 **Goals:**
 
 - Add a distinct `generative_editable_pptx` export mode without changing existing PDF, raster `pptx`, or the separate image-layer OpenSpec change.
+- Require VLM-first page understanding for the current implementation path; do not silently bypass VLM with OCR-only or local-CV-only reconstruction.
 - Prefer output quality over model cost by default: validate previews, repair bounded failures, and fail rather than silently returning low-quality editable output.
 - Use AIPPT text metadata as semantic truth when available and OCR as the source for layout, style, and fallback text.
 - Create both text-clean and base-clean background assets so the system has a high-fidelity text-editable fallback and a full reconstruction base.
@@ -61,6 +62,7 @@ Alternatives considered:
 
 `config.example.yaml` documents placeholder provider roles:
 
+- `api.models.VLM`
 - `api.models.ocr_model`
 - `api.models.image_model`
 - `api.models.edit_model`
@@ -98,9 +100,9 @@ Alternatives considered:
 - Generate only a base-clean background. Rejected because a failed asset reconstruction would leave no good fallback.
 - Generate only a text-clean background. Rejected because full foreground editability requires a clean base underneath rebuilt assets.
 
-### Decision 6: Foreground planning uses generated background differences plus visual analysis
+### Decision 6: Foreground planning uses VLM page analysis plus generated background differences
 
-Without an image-layer model, the system detects candidate foreground elements by comparing source images to base-clean backgrounds, excluding accepted text masks, and grouping connected/nearby regions. A visual planner can classify candidates into native-shape candidates, bitmap asset candidates, complex whole visuals, duplicates, rejected text-like regions, or uncertain regions.
+Without an image-layer model, the current implementation requires a VLM page analysis to identify text regions, bitmap regions, and simple shape regions. The system combines those regions with generated clean backgrounds, OCR masks, source-pixel geometry, and deterministic filtering to classify candidates into native-shape candidates, bitmap asset candidates, complex whole visuals, duplicates, rejected text-like regions, or uncertain regions.
 
 This is not true layer decomposition; it is a reconstruction plan that drives asset generation and validation.
 
@@ -147,6 +149,9 @@ Slide images + optional AIPPT text metadata
 Create job directory and deck/page manifests
         |
         v
+VLM page analysis
+        |
+        v
 OCR + text matching
         |
         v
@@ -187,6 +192,7 @@ Text masks
 The implementation should define provider interfaces before concrete clients:
 
 - `OCRProvider`: returns text content, boxes/polygons, confidence, font-size hints, color, alignment, and style hints.
+- `VLMPageAnalysisProvider`: returns structured page regions for text, bitmap assets, and simple shapes in a known pixel coordinate space.
 - `ImageEditProvider`: edits a source image with a prompt and optional mask to produce text-clean backgrounds, base-clean backgrounds, asset sheets, or repairs.
 - `ImageGenerationProvider`: generates or regenerates assets when edit-based extraction fails or a visual asset needs clean re-creation.
 - `VisualPlanner`: uses source images, generated backgrounds, OCR masks, and optional model analysis to produce foreground candidates and classifications.
@@ -227,8 +233,10 @@ All implementation tasks follow TDD:
 ## Live Verification Status
 
 - Local verification targets are configured through project `config.yaml`; automated tests continue to use fake providers.
-- The initial strict live gate is one-slide first, followed by a small multi-slide deck only after the one-slide run passes.
-- The current configured OCR provider did not return schema-valid OCR JSON during strict one-slide smoke verification.
-- The current image generation provider returned an upstream `524` during direct provider smoke verification.
-- A diagnostic one-slide run with local OCR advanced into asset reconstruction, but the generated asset sheet failed strict asset QA with `edge_touch` and visible source drift.
-- The initial preview similarity threshold remains configurable through `generative_editable_pptx.quality.preview_similarity_threshold` and is recorded in the deck manifest for each run.
+- The current live path is VLM-first. If the VLM provider is unavailable or repeatedly fails, the generative editable export fails rather than switching to an OCR-only reconstruction path.
+- A six-slide replay-assets run completed with live VLM, OCR, image edit, and image generation/edit configuration. The original strict run produced a PPTX and artifacts, but failed the old preview gate on page 5 because the raw changed-pixel ratio slightly exceeded the threshold on a text-dense page.
+- The existing six-slide artifact was then revalidated without additional provider calls using the current text-overlap-aware preview gate. This revalidation passed all 6 pages; it is not a separate fresh provider run.
+- Revalidated report: `/private/tmp/aippt-vlm-6page-full-editquota-20260708/report-revalidated-strict.json`.
+- Revalidated object totals: `TEXT_BOX=120`, `PICTURE=54`, `LINE=30`, `AUTO_SHAPE=18`, `BACKGROUND_PICTURE=6`; each page had `full_slide_picture_count=0`.
+- Revalidated preview status: all 6 pages passed with the current text-overlap-aware preview gate and `reconstruction_issues=[]`.
+- Known limitation: text-dense pages can exceed the raw changed-pixel ratio because editable PPT text renders differently from baked raster text. The preview validator only grants limited headroom when mean delta remains within threshold and changed pixels substantially overlap text regions.

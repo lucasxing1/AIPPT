@@ -9,7 +9,7 @@ The system SHALL provide a distinct generative editable PPTX export mode without
 
 #### Scenario: Generative editable PPTX export is requested
 - **WHEN** a user exports with format `generative_editable_pptx`
-- **THEN** the system SHALL run the OCR, image editing, image generation, manifest composition, preview, validation, and repair pipeline
+- **THEN** the system SHALL run the VLM-first OCR, image editing, image generation, manifest composition, preview, validation, and repair pipeline
 
 #### Scenario: Image-layer editable export is not modified
 - **WHEN** the separate image-layer editable export OpenSpec change exists in the repository
@@ -24,7 +24,7 @@ The system SHALL load generative editable export provider settings from the proj
 
 #### Scenario: Example configuration is updated
 - **WHEN** the repository is inspected after this capability is implemented
-- **THEN** `config.example.yaml` SHALL document placeholder OCR, image edit, image generation, reconstruction, quality, timeout, and retry settings for generative editable PPTX export
+- **THEN** `config.example.yaml` SHALL document placeholder VLM, OCR, image edit, image generation, reconstruction, quality, timeout, and retry settings for generative editable PPTX export
 
 #### Scenario: Local configuration provides real providers
 - **WHEN** a developer runs live provider verification
@@ -37,6 +37,10 @@ The system SHALL load generative editable export provider settings from the proj
 #### Scenario: Missing live provider configuration
 - **WHEN** a live generative editable export is requested without required local provider settings
 - **THEN** the system SHALL fail with a clear configuration error that names the missing provider role without exposing secrets
+
+#### Scenario: VLM-first reconstruction is required
+- **WHEN** a live generative editable export is requested
+- **THEN** the system SHALL require a configured VLM provider for page-structure analysis and SHALL NOT silently downgrade to OCR-only or local-CV-only reconstruction
 
 ### Requirement: Generative editable deck manifest
 The system SHALL create a deck manifest and one page manifest per slide for every generative editable PPTX export run.
@@ -95,8 +99,8 @@ The system SHALL create separate background candidates for text-only cleanup and
 - **WHEN** a background candidate is generated, preserved, repaired, or rejected
 - **THEN** the page manifest SHALL record the strategy, provider role, prompts or prompt identifiers, input asset references, output asset reference, and validation result
 
-### Requirement: Foreground planning from generated backgrounds
-The system SHALL plan non-text foreground reconstruction using OCR masks, generated backgrounds, image differences, and visual analysis.
+### Requirement: Foreground planning from VLM analysis and generated backgrounds
+The system SHALL plan non-text foreground reconstruction using VLM page analysis, OCR masks, generated backgrounds, image differences, and deterministic visual filtering.
 
 #### Scenario: Foreground candidates are detected
 - **WHEN** source and base-clean images are available

@@ -2,12 +2,13 @@
 
 AIPPT currently exports PPTX files as full-slide raster images, which preserves appearance but leaves text and visual elements mostly uneditable. Since image-layer decomposition resources are not currently available, this change proposes a separate effect-first editable export path that relies on OCR, image editing, image generation, manifest composition, and validation.
 
-This change intentionally does not modify the existing `add-editable-pptx-export` OpenSpec change; that change remains available as the future image-layer decomposition approach.
+This change intentionally does not modify the existing `add-editable-pptx-export` OpenSpec change; that change remains available as the future image-layer decomposition approach. The current implementation path is VLM-first: a multimodal understanding model supplies page structure, OCR supplies text/layout evidence, and image edit/generation providers reconstruct clean backgrounds and bitmap assets.
 
 ## What Changes
 
 - Add a new explicit generative editable PPTX export mode beside the existing raster `pptx` export.
 - Introduce a manifest-driven reconstruction pipeline that uses:
+  - VLM page analysis as the required page-structure source for text regions, bitmap regions, and simple shape regions.
   - AIPPT slide/text metadata when available, with OCR as the layout/style and fallback text source.
   - Image editing to create text-clean and base-clean background assets.
   - Image editing or image generation to create source-faithful foreground asset sheets and local repairs.

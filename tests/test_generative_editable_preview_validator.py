@@ -339,6 +339,103 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
             [issue.code for issue in report.issues],
         )
 
+    def test_structural_validation_allows_clean_fallback_icon_source_preserved_crop_assets(self):
+        from src.generative_editable_composer import compose_deck_from_manifests
+        from src.generative_editable_preview_validator import validate_composed_deck_structure
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, page = self._write_validation_fixture(root)
+            source_preserved_path = root / "assets" / "0000-slide-a" / "icon.source-preserved.png"
+            source_preserved_path.write_bytes(
+                (root / "assets" / "0000-slide-a" / "asset.png").read_bytes()
+            )
+            clean_fallback_page = replace(
+                page,
+                provenance={**page.provenance, "clean_background_provider_failed": True},
+                bitmap_assets=[
+                    replace(
+                        page.bitmap_assets[0],
+                        asset_path="assets/0000-slide-a/icon.source-preserved.png",
+                        provenance={
+                            "asset_strategy": "source_preserved_crop",
+                            "alpha_strategy": "opaque_source_crop",
+                            "candidate_classification": "bitmap_asset_candidate",
+                            "asset_sheet_skipped_reason": "icon_source_preserved",
+                            "candidate_provenance": {
+                                "source": "vlm_bitmap_region",
+                                "vlm_type": "icon",
+                            },
+                            "original_source_pixel_bbox": [10, 10, 80, 80],
+                        },
+                    )
+                ],
+            )
+            write_manifest(root / "pages" / "0000-slide-a.json", clean_fallback_page)
+            output = root / "source-preserved-clean-fallback-icon.pptx"
+            compose_deck_from_manifests(root / "deck.json", root, output)
+
+            report = validate_composed_deck_structure(
+                deck_manifest_path=root / "deck.json",
+                artifact_root=root,
+                pptx_path=output,
+            )
+
+        self.assertEqual(report.status, "passed")
+        self.assertNotIn(
+            "forbidden_source_crop_bitmap_asset",
+            [issue.code for issue in report.issues],
+        )
+
+    def test_structural_validation_rejects_oversized_clean_fallback_icon_source_preserved_crop_assets(self):
+        from src.generative_editable_composer import compose_deck_from_manifests
+        from src.generative_editable_preview_validator import validate_composed_deck_structure
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, page = self._write_validation_fixture(root)
+            source_preserved_path = root / "assets" / "0000-slide-a" / "icon.source-preserved.png"
+            source_preserved_path.write_bytes(
+                (root / "assets" / "0000-slide-a" / "asset.png").read_bytes()
+            )
+            oversized_icon_page = replace(
+                page,
+                provenance={**page.provenance, "clean_background_provider_failed": True},
+                bitmap_assets=[
+                    replace(
+                        page.bitmap_assets[0],
+                        asset_path="assets/0000-slide-a/icon.source-preserved.png",
+                        source_pixel_bbox=(20, 20, 720, 380),
+                        provenance={
+                            "asset_strategy": "source_preserved_crop",
+                            "alpha_strategy": "opaque_source_crop",
+                            "candidate_classification": "bitmap_asset_candidate",
+                            "asset_sheet_skipped_reason": "icon_source_preserved",
+                            "candidate_provenance": {
+                                "source": "vlm_bitmap_region",
+                                "vlm_type": "icon",
+                            },
+                            "original_source_pixel_bbox": [20, 20, 720, 380],
+                        },
+                    )
+                ],
+            )
+            write_manifest(root / "pages" / "0000-slide-a.json", oversized_icon_page)
+            output = root / "source-preserved-oversized-clean-fallback-icon.pptx"
+            compose_deck_from_manifests(root / "deck.json", root, output)
+
+            report = validate_composed_deck_structure(
+                deck_manifest_path=root / "deck.json",
+                artifact_root=root,
+                pptx_path=output,
+            )
+
+        self.assertEqual(report.status, "failed")
+        self.assertIn(
+            "forbidden_source_crop_bitmap_asset",
+            [issue.code for issue in report.issues],
+        )
+
     def test_structural_validation_rejects_incomplete_opaque_source_crop_provenance(self):
         from src.generative_editable_composer import compose_deck_from_manifests
         from src.generative_editable_preview_validator import validate_composed_deck_structure
@@ -1200,6 +1297,184 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertEqual(report.issues[0].code, "preview_similarity_failed")
         self.assertGreater(report.issues[0].details["mean_abs_delta"], 1.0)
         self.assertGreater(report.issues[0].details["changed_pixel_ratio"], 0.01)
+
+    def test_preview_similarity_allows_text_dense_editable_render_drift(self):
+        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, page = self._write_validation_fixture(root)
+            source = root / "source.png"
+            source_image = Image.new("RGB", (100, 100), (128, 128, 128))
+            source_image.save(source)
+            preview = source_image.copy()
+            draw = ImageDraw.Draw(preview)
+            draw.rectangle((0, 0, 99, 13), fill=(160, 160, 160))
+            dense_page = replace(
+                page,
+                source_image_size=(100, 100),
+                native_shapes=[],
+                text_boxes=[
+                    replace(
+                        page.text_boxes[0],
+                        text=f"Line {index}",
+                        source_pixel_bbox=(0, index, 80, index + 1),
+                        source_pixel_polygon=((0, index), (80, index), (80, index + 1), (0, index + 1)),
+                    )
+                    for index in range(24)
+                ],
+                bitmap_assets=[
+                    replace(page.bitmap_assets[0], asset_id=f"asset-{index}", source_pixel_bbox=(0, 0, 10, 10))
+                    for index in range(6)
+                ],
+            )
+
+            report = validate_preview_similarity(
+                source_image_path=source,
+                preview=PreviewRenderResult(
+                    image=preview,
+                    metadata={"renderer": "fake_powerpoint", "is_powerpoint_render": True},
+                ),
+                slide_id="slide-a",
+                page_index=0,
+                max_mean_abs_delta=20.4,
+                max_changed_pixel_ratio=0.132,
+                page_manifest=dense_page,
+            )
+
+        self.assertEqual(report.status, "passed")
+        self.assertEqual(report.issues, [])
+
+    def test_preview_similarity_rejects_text_dense_render_drift_outside_text_regions(self):
+        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, page = self._write_validation_fixture(root)
+            source = root / "source.png"
+            source_image = Image.new("RGB", (100, 100), (128, 128, 128))
+            source_image.save(source)
+            preview = source_image.copy()
+            draw = ImageDraw.Draw(preview)
+            draw.rectangle((0, 80, 99, 93), fill=(160, 160, 160))
+            dense_page = replace(
+                page,
+                source_image_size=(100, 100),
+                native_shapes=[],
+                text_boxes=[
+                    replace(
+                        page.text_boxes[0],
+                        text=f"Line {index}",
+                        source_pixel_bbox=(0, index, 80, index + 1),
+                        source_pixel_polygon=((0, index), (80, index), (80, index + 1), (0, index + 1)),
+                    )
+                    for index in range(24)
+                ],
+                bitmap_assets=[
+                    replace(page.bitmap_assets[0], asset_id=f"asset-{index}", source_pixel_bbox=(0, 0, 10, 10))
+                    for index in range(6)
+                ],
+            )
+
+            report = validate_preview_similarity(
+                source_image_path=source,
+                preview=PreviewRenderResult(
+                    image=preview,
+                    metadata={"renderer": "fake_powerpoint", "is_powerpoint_render": True},
+                ),
+                slide_id="slide-a",
+                page_index=0,
+                max_mean_abs_delta=20.4,
+                max_changed_pixel_ratio=0.132,
+                page_manifest=dense_page,
+            )
+
+        self.assertEqual(report.status, "failed")
+        self.assertEqual(report.issues[0].code, "preview_similarity_failed")
+
+    def test_preview_similarity_rejects_text_dense_mixed_drift_with_too_much_non_text_change(self):
+        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, page = self._write_validation_fixture(root)
+            source = root / "source.png"
+            source_image = Image.new("RGB", (100, 100), (128, 128, 128))
+            source_image.save(source)
+            preview = source_image.copy()
+            draw = ImageDraw.Draw(preview)
+            for y in range(0, 11):
+                for x in range(0, 100):
+                    draw.point((x, y), fill=(160, 160, 160))
+            for y in range(80, 85):
+                for x in range(0, 100):
+                    draw.point((x, y), fill=(160, 160, 160))
+            for x in range(0, 10):
+                draw.point((x, 85), fill=(160, 160, 160))
+            dense_page = replace(
+                page,
+                source_image_size=(100, 100),
+                native_shapes=[],
+                text_boxes=[
+                    replace(
+                        page.text_boxes[0],
+                        text=f"Line {index}",
+                        source_pixel_bbox=(0, index, 80, index + 1),
+                        source_pixel_polygon=((0, index), (80, index), (80, index + 1), (0, index + 1)),
+                    )
+                    for index in range(24)
+                ],
+                bitmap_assets=[
+                    replace(page.bitmap_assets[0], asset_id=f"asset-{index}", source_pixel_bbox=(0, 0, 10, 10))
+                    for index in range(6)
+                ],
+            )
+
+            report = validate_preview_similarity(
+                source_image_path=source,
+                preview=PreviewRenderResult(
+                    image=preview,
+                    metadata={"renderer": "fake_powerpoint", "is_powerpoint_render": True},
+                ),
+                slide_id="slide-a",
+                page_index=0,
+                max_mean_abs_delta=20.4,
+                max_changed_pixel_ratio=0.132,
+                page_manifest=dense_page,
+            )
+
+        self.assertEqual(report.status, "failed")
+        self.assertEqual(report.issues[0].code, "preview_similarity_failed")
+        self.assertGreater(report.issues[0].details["outside_text_changed_pixel_ratio"], 0.05)
+
+    def test_preview_similarity_still_rejects_sparse_render_drift_over_changed_area_threshold(self):
+        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _, page = self._write_validation_fixture(root)
+            source = root / "source.png"
+            source_image = Image.new("RGB", (100, 100), (128, 128, 128))
+            source_image.save(source)
+            preview = source_image.copy()
+            draw = ImageDraw.Draw(preview)
+            draw.rectangle((0, 0, 99, 13), fill=(160, 160, 160))
+
+            report = validate_preview_similarity(
+                source_image_path=source,
+                preview=PreviewRenderResult(
+                    image=preview,
+                    metadata={"renderer": "fake_powerpoint", "is_powerpoint_render": True},
+                ),
+                slide_id="slide-a",
+                page_index=0,
+                max_mean_abs_delta=20.4,
+                max_changed_pixel_ratio=0.132,
+                page_manifest=page,
+            )
+
+        self.assertEqual(report.status, "failed")
+        self.assertEqual(report.issues[0].code, "preview_similarity_failed")
 
     def test_preview_similarity_rejects_manifest_stub_as_real_powerpoint_quality_gate(self):
         from src.generative_editable_preview_validator import (

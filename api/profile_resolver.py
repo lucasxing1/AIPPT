@@ -20,7 +20,8 @@ def _has_complete_generation_profiles(config: Any) -> bool:
         or getattr(profiles, "prompt_model", None)
         or getattr(profiles, "VLM", None)
     )
-    required = (text_profile, profiles.image_model)
+    image_profile = getattr(profiles, "image_model", None)
+    required = (text_profile, image_profile)
     return all(
         profile
         and _has_value(profile.model)

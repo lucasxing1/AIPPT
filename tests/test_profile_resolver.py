@@ -1,4 +1,5 @@
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from api.models import (
@@ -126,6 +127,29 @@ class ProfileResolverTest(unittest.TestCase):
         self.assertEqual(profiles.prompt.adapter, "openai_chat")
         self.assertEqual(profiles.image.adapter, "raw_chat_multimodal")
         self.assertEqual(profiles.edit.adapter, "raw_chat_multimodal")
+
+    def test_partial_generation_profile_object_without_image_model_uses_backend_profiles(self):
+        config = SimpleNamespace(
+            model_profiles=SimpleNamespace(
+                text_model=ModelProfileConfig(
+                    model="text",
+                    base_url="https://text.example/v1",
+                    api_key="text-key",
+                ),
+                prompt_model=None,
+                VLM=None,
+            ),
+            text=None,
+            image=None,
+        )
+
+        with patch(
+            "api.profile_resolver.load_default_profiles", return_value=self.default_profiles()
+        ):
+            profiles = profiles_from_generation_config(config)
+
+        self.assertEqual(profiles.prompt.model, "default-text")
+        self.assertEqual(profiles.image.model, "default-image")
 
     def test_empty_edit_config_uses_backend_profiles(self):
         config = EditConfig(api_key="", base_url="", model="gpt-image-2")

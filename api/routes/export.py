@@ -292,9 +292,30 @@ def _export_raster_pptx_fallback(*, image_paths: list, output_path: str, aspect_
     return output_path
 
 
+def _text_editable_background_fallback_error(reason: str) -> GenerativeEditableFallbackError:
+    return GenerativeEditableFallbackError(
+        validation_report=ValidationReport(
+            status="failed",
+            checked_pages=0,
+            issues=[
+                ValidationIssue(
+                    code="fallback_precondition_failed",
+                    message=reason,
+                )
+            ],
+        ),
+        fallback_policy="text_editable_background",
+        fallback_failure_reason=reason,
+    )
+
+
 def _export_text_editable_background_fallback(*, artifact_root: Path, job_id: str, output_path: str) -> str:
     job_dir = artifact_root / job_id
     deck_path = job_dir / "deck.json"
+    if not deck_path.is_file():
+        raise _text_editable_background_fallback_error(
+            "text_clean_background fallback failed: deck manifest is missing because the pipeline failed before creating artifacts"
+        )
     deck = read_deck_manifest(deck_path)
     fallback_dir = job_dir / "pages" / "text-editable-background-fallback"
     fallback_dir.mkdir(parents=True, exist_ok=True)
@@ -303,7 +324,9 @@ def _export_text_editable_background_fallback(*, artifact_root: Path, job_id: st
         page = read_page_manifest(job_dir / page_ref)
         background = page.text_clean_background or page.base_clean_background or page.chosen_background
         if not background:
-            raise RuntimeError("text_clean_background fallback requires a cleaned background artifact")
+            raise _text_editable_background_fallback_error(
+                "text_clean_background fallback requires a cleaned background artifact"
+            )
         fallback_page = replace(
             page,
             chosen_background=background,

@@ -2,6 +2,7 @@ import tempfile
 import unittest
 import hashlib
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image, ImageChops, ImageDraw
 
@@ -30,6 +31,45 @@ class RecordingImageEditProvider(ImageEditProvider):
 
 
 class GenerativeEditableBackgroundsTest(unittest.TestCase):
+    def test_normalize_background_closes_output_before_overwriting_same_path(self):
+        from src.generative_editable_backgrounds import _normalize_background_to_source_size
+
+        class FakeImage:
+            def __init__(self, size):
+                self.size = size
+                self.closed = False
+                self.saved = False
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                self.closed = True
+
+            def convert(self, mode):
+                return self
+
+            def resize(self, size):
+                self.size = size
+                return self
+
+            def save(self, path):
+                if not output_image.closed:
+                    raise PermissionError("output image handle is still open")
+                self.saved = True
+
+        source_image = FakeImage((120, 80))
+        output_image = FakeImage((240, 120))
+
+        with patch(
+            "src.generative_editable_backgrounds.Image.open",
+            side_effect=[source_image, output_image],
+        ):
+            provenance = _normalize_background_to_source_size("output.png", "source.png")
+
+        self.assertEqual(provenance["normalized_to_source_size"], [120, 80])
+        self.assertTrue(output_image.saved)
+
     def test_image_edit_background_outputs_are_normalized_to_source_size(self):
         from src.generative_editable_backgrounds import create_base_clean_background
 

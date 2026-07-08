@@ -52,3 +52,7 @@ def test_slide_text_metadata_avoids_duplicate_body_matching_title():
     assert _slide_text_metadata(prompt) == [
         {"text": "Only Title", "role": "title", "order": 1, "style_hint": {}}
     ]
+
+
+def test_slide_text_metadata_ignores_string_prompt_values():
+    assert _slide_text_metadata("standalone prompt text") == []

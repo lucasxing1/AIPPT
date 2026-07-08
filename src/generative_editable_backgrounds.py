@@ -438,12 +438,15 @@ def _normalize_background_to_source_size(
     output_path = Path(output_asset_path)
     with Image.open(source_image_path) as source:
         source_size = source.size
+    needs_resize = False
     with Image.open(output_path) as output:
-        if output.size == source_size:
-            return {}
-        normalized = output.convert("RGB").resize(source_size)
+        if output.size != source_size:
+            needs_resize = True
+            normalized = output.convert("RGB").resize(source_size)
+    if needs_resize:
         normalized.save(output_path)
-    return {"normalized_to_source_size": list(source_size)}
+        return {"normalized_to_source_size": list(source_size)}
+    return {}
 
 
 def _sample_border_pixels(image: Image.Image, bbox: tuple[int, int, int, int]) -> list[tuple[int, int, int]]:

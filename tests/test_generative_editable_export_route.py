@@ -905,6 +905,55 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
             self.assertEqual(result.fallback_used, "text_editable_background")
             self.assertTrue(any(shape.has_text_frame for shape in presentation.slides[0].shapes))
 
+    def test_text_editable_background_fallback_requires_deck_manifest(self):
+        from src.generative_editable_pipeline import GenerativeEditableFallbackError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(GenerativeEditableFallbackError):
+                export_route._export_text_editable_background_fallback(
+                    artifact_root=Path(tmp),
+                    job_id="export",
+                    output_path=str(Path(tmp) / "out.pptx"),
+                )
+
+    def test_text_editable_background_fallback_reports_missing_background_artifact(self):
+        from src.generative_editable_manifest import DeckManifest, PageManifest, write_manifest
+        from src.generative_editable_pipeline import GenerativeEditableFallbackError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            artifact_root = Path(tmp)
+            job_dir = artifact_root / "export"
+            page_path = job_dir / "pages" / "0000-slide-1.json"
+            write_manifest(
+                page_path,
+                PageManifest(
+                    slide_id="slide-1",
+                    page_index=0,
+                    source_image_path="sources/0000-slide-1.png",
+                    source_image_size=(800, 450),
+                    slide_size=(13.333, 7.5),
+                ),
+            )
+            write_manifest(
+                job_dir / "deck.json",
+                DeckManifest(
+                    job_id="export",
+                    slide_order=["slide-1"],
+                    aspect_ratio="16:9",
+                    provider_roles={},
+                    quality_settings={},
+                    fallback_policy="fail",
+                    page_manifest_paths=["pages/0000-slide-1.json"],
+                ),
+            )
+
+            with self.assertRaises(GenerativeEditableFallbackError):
+                export_route._export_text_editable_background_fallback(
+                    artifact_root=artifact_root,
+                    job_id="export",
+                    output_path=str(artifact_root / "out.pptx"),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -87,13 +87,20 @@ def _prompt_data_from_confirmed(request: GenerationRequest, ppt_config: PPTConfi
 
 
 def _slide_text_metadata(slide_prompt) -> list[dict]:
+    if isinstance(slide_prompt, str):
+        return []
+
     metadata = []
-    title = str(getattr(slide_prompt, "title", "") or "").strip()
-    body = str(
-        getattr(slide_prompt, "display_content", "")
-        or getattr(slide_prompt, "content_summary", "")
-        or ""
-    ).strip()
+    title = getattr(slide_prompt, "title", "")
+    if callable(title):
+        title = ""
+    title = str(title or "").strip()
+    body = getattr(slide_prompt, "display_content", "") or getattr(
+        slide_prompt, "content_summary", ""
+    )
+    if callable(body):
+        body = ""
+    body = str(body or "").strip()
 
     if title:
         metadata.append({"text": title, "role": "title", "order": 1, "style_hint": {}})

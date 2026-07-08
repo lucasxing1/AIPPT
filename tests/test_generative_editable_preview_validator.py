@@ -56,7 +56,7 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
                         line_start=(280, 82),
                         line_end=(380, 82),
                         stroke_width=4,
-                    )
+                    ),
                 ],
                 bitmap_assets=[
                     BitmapAssetSpec(
@@ -77,7 +77,9 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
 
             preview_one = render_manifest_preview(page, root, output_size=(800, 450))
             preview_two = render_manifest_preview(page, root, output_size=(800, 450))
-            preview_result = render_manifest_preview_with_metadata(page, root, output_size=(800, 450))
+            preview_result = render_manifest_preview_with_metadata(
+                page, root, output_size=(800, 450)
+            )
 
         self.assertEqual(preview_one.size, (800, 450))
         self.assertEqual(preview_one.tobytes(), preview_two.tobytes())
@@ -138,7 +140,8 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
 
         self.assertEqual(report.status, "failed")
         background_issues = [
-            issue for issue in report.issues
+            issue
+            for issue in report.issues
             if issue.code == "object_identity_mismatch"
             and issue.details["target_kind"] == "background"
         ]
@@ -250,7 +253,9 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         failed_payload = report.to_dict()
         self.assertEqual(failed_payload["status"], "failed")
         self.assertEqual(failed_payload["checked_pages"], 1)
-        text_issue = next(issue for issue in failed_payload["issues"] if issue["code"] == "missing_required_text")
+        text_issue = next(
+            issue for issue in failed_payload["issues"] if issue["code"] == "missing_required_text"
+        )
         self.assertEqual(text_issue["severity"], "error")
         self.assertEqual(text_issue["slide_id"], "slide-a")
         self.assertEqual(text_issue["details"]["target_kind"], "text")
@@ -287,9 +292,7 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
 
         self.assertEqual(report.status, "failed")
         issue = next(
-            issue
-            for issue in report.issues
-            if issue.code == "forbidden_source_crop_bitmap_asset"
+            issue for issue in report.issues if issue.code == "forbidden_source_crop_bitmap_asset"
         )
         self.assertEqual(issue.details["target_kind"], "bitmap_asset")
         self.assertEqual(issue.details["target_id"], "asset")
@@ -387,7 +390,9 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
             [issue.code for issue in report.issues],
         )
 
-    def test_structural_validation_rejects_oversized_clean_fallback_icon_source_preserved_crop_assets(self):
+    def test_structural_validation_rejects_oversized_clean_fallback_icon_source_preserved_crop_assets(
+        self,
+    ):
         from src.generative_editable_composer import compose_deck_from_manifests
         from src.generative_editable_preview_validator import validate_composed_deck_structure
 
@@ -538,7 +543,9 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
             )
 
         self.assertEqual(report.status, "failed")
-        issue = next(issue for issue in report.issues if issue.code == "full_slide_source_background_only")
+        issue = next(
+            issue for issue in report.issues if issue.code == "full_slide_source_background_only"
+        )
         self.assertEqual(issue.details["target_kind"], "background")
         self.assertEqual(issue.details["editable_object_count"], 0)
 
@@ -631,7 +638,9 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
             prs.slide_width = Inches(10)
             prs.slide_height = Inches(5.625)
             slide = prs.slides.add_slide(prs.slide_layouts[6])
-            slide.shapes.add_picture(str(source), 0, 0, width=prs.slide_width, height=prs.slide_height)
+            slide.shapes.add_picture(
+                str(source), 0, 0, width=prs.slide_width, height=prs.slide_height
+            )
             text = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(2), Inches(0.5))
             text.text_frame.text = "Preview"
             output = root / "unsafe.pptx"
@@ -746,7 +755,9 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
                 pptx_path=output,
             )
 
-        self.assertNotIn("unsafe_full_slide_source_with_text", [issue.code for issue in report.issues])
+        self.assertNotIn(
+            "unsafe_full_slide_source_with_text", [issue.code for issue in report.issues]
+        )
 
     def test_structural_validation_reports_object_order_failures(self):
         from src.generative_editable_preview_validator import validate_composed_deck_structure
@@ -817,7 +828,9 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
             _set_slide_picture_background(slide, root / "backgrounds" / "0000-slide-a" / "base.png")
             slide.shapes.add_shape(1, Inches(1), Inches(1), Inches(2), Inches(1))
             slide.shapes.add_connector(1, Inches(3.5), Inches(1.0125), Inches(4.75), Inches(1.0125))
-            slide.shapes.add_picture(str(wrong_asset), Inches(3.75), Inches(1.125), width=Inches(1), height=Inches(0.75))
+            slide.shapes.add_picture(
+                str(wrong_asset), Inches(3.75), Inches(1.125), width=Inches(1), height=Inches(0.75)
+            )
             text = slide.shapes.add_textbox(Inches(1.25), Inches(2.625), Inches(2), Inches(0.5))
             text.text_frame.text = "Preview"
             output = root / "wrong-identity.pptx"
@@ -911,9 +924,13 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
                 pptx_path=output,
             )
 
-        self.assertNotIn("unsafe_full_slide_source_with_text", [issue.code for issue in report.issues])
+        self.assertNotIn(
+            "unsafe_full_slide_source_with_text", [issue.code for issue in report.issues]
+        )
 
-    def test_structural_validation_allows_source_preserving_background_when_text_region_changed(self):
+    def test_structural_validation_allows_source_preserving_background_when_text_region_changed(
+        self,
+    ):
         from src.generative_editable_composer import compose_deck_from_manifests
         from src.generative_editable_preview_validator import validate_composed_deck_structure
 
@@ -966,7 +983,9 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
                 pptx_path=output,
             )
 
-        self.assertNotIn("unsafe_full_slide_source_with_text", [issue.code for issue in report.issues])
+        self.assertNotIn(
+            "unsafe_full_slide_source_with_text", [issue.code for issue in report.issues]
+        )
 
     def test_structural_validation_reports_wrong_native_shape_type_at_expected_position(self):
         from src.generative_editable_composer import _set_slide_picture_background
@@ -1224,7 +1243,9 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
             )
 
         self.assertIn("missing_asset", [issue.code for issue in report.issues])
-        source_issue = next(issue for issue in report.issues if issue.details.get("target_kind") == "source")
+        source_issue = next(
+            issue for issue in report.issues if issue.details.get("target_kind") == "source"
+        )
         self.assertFalse(source_issue.details["repairable"])
 
     def test_structural_validation_reports_empty_source_asset_path(self):
@@ -1234,7 +1255,9 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             _, page = self._write_validation_fixture(root)
-            write_manifest(root / "pages" / "0000-slide-a.json", replace(page, source_image_path=""))
+            write_manifest(
+                root / "pages" / "0000-slide-a.json", replace(page, source_image_path="")
+            )
             output = root / "out.pptx"
             compose_deck_from_manifests(root / "deck.json", root, output)
 
@@ -1245,11 +1268,16 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
             )
 
         self.assertIn("invalid_asset_path", [issue.code for issue in report.issues])
-        source_issue = next(issue for issue in report.issues if issue.details.get("target_kind") == "source")
+        source_issue = next(
+            issue for issue in report.issues if issue.details.get("target_kind") == "source"
+        )
         self.assertEqual(source_issue.details["asset_ref"], "")
 
     def test_preview_similarity_passes_for_deterministic_matching_fixture_images(self):
-        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+        from src.generative_editable_preview_validator import (
+            PreviewRenderResult,
+            validate_preview_similarity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1273,7 +1301,10 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertEqual(report.issues, [])
 
     def test_preview_similarity_fails_when_fixture_images_exceed_threshold(self):
-        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+        from src.generative_editable_preview_validator import (
+            PreviewRenderResult,
+            validate_preview_similarity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1299,7 +1330,10 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertGreater(report.issues[0].details["changed_pixel_ratio"], 0.01)
 
     def test_preview_similarity_allows_text_dense_editable_render_drift(self):
-        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+        from src.generative_editable_preview_validator import (
+            PreviewRenderResult,
+            validate_preview_similarity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1319,12 +1353,21 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
                         page.text_boxes[0],
                         text=f"Line {index}",
                         source_pixel_bbox=(0, index, 80, index + 1),
-                        source_pixel_polygon=((0, index), (80, index), (80, index + 1), (0, index + 1)),
+                        source_pixel_polygon=(
+                            (0, index),
+                            (80, index),
+                            (80, index + 1),
+                            (0, index + 1),
+                        ),
                     )
                     for index in range(24)
                 ],
                 bitmap_assets=[
-                    replace(page.bitmap_assets[0], asset_id=f"asset-{index}", source_pixel_bbox=(0, 0, 10, 10))
+                    replace(
+                        page.bitmap_assets[0],
+                        asset_id=f"asset-{index}",
+                        source_pixel_bbox=(0, 0, 10, 10),
+                    )
                     for index in range(6)
                 ],
             )
@@ -1346,7 +1389,10 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertEqual(report.issues, [])
 
     def test_preview_similarity_rejects_text_dense_render_drift_outside_text_regions(self):
-        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+        from src.generative_editable_preview_validator import (
+            PreviewRenderResult,
+            validate_preview_similarity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1366,12 +1412,21 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
                         page.text_boxes[0],
                         text=f"Line {index}",
                         source_pixel_bbox=(0, index, 80, index + 1),
-                        source_pixel_polygon=((0, index), (80, index), (80, index + 1), (0, index + 1)),
+                        source_pixel_polygon=(
+                            (0, index),
+                            (80, index),
+                            (80, index + 1),
+                            (0, index + 1),
+                        ),
                     )
                     for index in range(24)
                 ],
                 bitmap_assets=[
-                    replace(page.bitmap_assets[0], asset_id=f"asset-{index}", source_pixel_bbox=(0, 0, 10, 10))
+                    replace(
+                        page.bitmap_assets[0],
+                        asset_id=f"asset-{index}",
+                        source_pixel_bbox=(0, 0, 10, 10),
+                    )
                     for index in range(6)
                 ],
             )
@@ -1393,7 +1448,10 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertEqual(report.issues[0].code, "preview_similarity_failed")
 
     def test_preview_similarity_rejects_text_dense_mixed_drift_with_too_much_non_text_change(self):
-        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+        from src.generative_editable_preview_validator import (
+            PreviewRenderResult,
+            validate_preview_similarity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1420,12 +1478,21 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
                         page.text_boxes[0],
                         text=f"Line {index}",
                         source_pixel_bbox=(0, index, 80, index + 1),
-                        source_pixel_polygon=((0, index), (80, index), (80, index + 1), (0, index + 1)),
+                        source_pixel_polygon=(
+                            (0, index),
+                            (80, index),
+                            (80, index + 1),
+                            (0, index + 1),
+                        ),
                     )
                     for index in range(24)
                 ],
                 bitmap_assets=[
-                    replace(page.bitmap_assets[0], asset_id=f"asset-{index}", source_pixel_bbox=(0, 0, 10, 10))
+                    replace(
+                        page.bitmap_assets[0],
+                        asset_id=f"asset-{index}",
+                        source_pixel_bbox=(0, 0, 10, 10),
+                    )
                     for index in range(6)
                 ],
             )
@@ -1448,7 +1515,10 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertGreater(report.issues[0].details["outside_text_changed_pixel_ratio"], 0.05)
 
     def test_preview_similarity_still_rejects_sparse_render_drift_over_changed_area_threshold(self):
-        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+        from src.generative_editable_preview_validator import (
+            PreviewRenderResult,
+            validate_preview_similarity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1568,7 +1638,10 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertIn("timeout", run.call_args.kwargs)
 
     def test_preview_similarity_rejects_manifest_stub_even_if_metadata_claims_powerpoint(self):
-        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+        from src.generative_editable_preview_validator import (
+            PreviewRenderResult,
+            validate_preview_similarity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1591,7 +1664,10 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertEqual(report.issues[0].code, "preview_renderer_not_powerpoint")
 
     def test_preview_similarity_reports_wrong_aspect_preview_without_resizing(self):
-        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+        from src.generative_editable_preview_validator import (
+            PreviewRenderResult,
+            validate_preview_similarity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1614,7 +1690,10 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertEqual(report.issues[0].code, "preview_dimensions_mismatch")
 
     def test_preview_similarity_returns_report_for_invalid_preview_image(self):
-        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+        from src.generative_editable_preview_validator import (
+            PreviewRenderResult,
+            validate_preview_similarity,
+        )
 
         class BrokenPreview:
             size = (120, 80)
@@ -1643,7 +1722,10 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
         self.assertEqual(report.issues[0].code, "invalid_preview_image")
 
     def test_preview_similarity_caps_source_and_preview_pixel_counts_before_comparison(self):
-        from src.generative_editable_preview_validator import PreviewRenderResult, validate_preview_similarity
+        from src.generative_editable_preview_validator import (
+            PreviewRenderResult,
+            validate_preview_similarity,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1728,7 +1810,7 @@ class GenerativeEditablePreviewValidatorTest(unittest.TestCase):
                     line_start=(280, 81),
                     line_end=(380, 81),
                     stroke_width=3,
-                )
+                ),
             ],
             bitmap_assets=[
                 BitmapAssetSpec(

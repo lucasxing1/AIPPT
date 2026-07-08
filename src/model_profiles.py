@@ -76,7 +76,9 @@ class ModelProfileSet:
 
 def resolve_model_profiles(data: Dict[str, Any]) -> ModelProfileSet:
     vlm_source = data.get("VLM") or data.get("vlm_model")
-    prompt_source = data.get("text_model") or data.get("prompt_model") or data.get("text") or vlm_source or {}
+    prompt_source = (
+        data.get("text_model") or data.get("prompt_model") or data.get("text") or vlm_source or {}
+    )
     prompt = _profile_from_dict("prompt", prompt_source)
     image = _profile_from_dict("image", data.get("image_model") or data.get("image") or {})
 
@@ -218,7 +220,9 @@ def _profile_from_dict(role: str, data: Dict[str, Any]) -> ModelProfile:
     )
 
 
-def _optional_profile_from_dict(role: str, data: Optional[Dict[str, Any]]) -> Optional[ModelProfile]:
+def _optional_profile_from_dict(
+    role: str, data: Optional[Dict[str, Any]]
+) -> Optional[ModelProfile]:
     if not data:
         return None
     return _profile_from_dict(role, data)

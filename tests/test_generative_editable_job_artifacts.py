@@ -155,7 +155,9 @@ class GenerativeEditableJobArtifactsTest(unittest.TestCase):
 
             loaded_page = read_page_manifest(artifacts.page_manifest_path("slide-a", 0))
             ocr_output = artifacts.read_provider_output("slide-a", 0, "ocr", "result.json")
-            edit_output = artifacts.read_provider_output("slide-a", 0, "image_edit", "base-clean.json")
+            edit_output = artifacts.read_provider_output(
+                "slide-a", 0, "image_edit", "base-clean.json"
+            )
             generation_output = artifacts.read_provider_output(
                 "slide-a", 0, "image_generation", "asset-sheet.json"
             )
@@ -249,7 +251,9 @@ class GenerativeEditableJobArtifactsTest(unittest.TestCase):
                         }
                     )
 
-            threads = [threading.Thread(target=append_events, args=(worker,)) for worker in range(4)]
+            threads = [
+                threading.Thread(target=append_events, args=(worker,)) for worker in range(4)
+            ]
             for thread in threads:
                 thread.start()
             for thread in threads:

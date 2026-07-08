@@ -1,7 +1,6 @@
 import json
 import tempfile
 import threading
-import time
 import unittest
 from pathlib import Path
 
@@ -44,7 +43,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             ],
         )
 
-        self.assertEqual([issue["code"] for issue in issues], ["visual_text_candidate_missing_ocr_text"])
+        self.assertEqual(
+            [issue["code"] for issue in issues], ["visual_text_candidate_missing_ocr_text"]
+        )
         self.assertEqual(issues[0]["source_pixel_bbox"], (286, 497, 391, 532))
 
     def test_unanchored_approximate_text_boxes_are_filtered_when_local_candidates_exist(self):
@@ -172,7 +173,12 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             TextBoxSpec(
                 text=text,
                 source_pixel_bbox=bbox,
-                source_pixel_polygon=((bbox[0], bbox[1]), (bbox[2], bbox[1]), (bbox[2], bbox[3]), (bbox[0], bbox[3])),
+                source_pixel_polygon=(
+                    (bbox[0], bbox[1]),
+                    (bbox[2], bbox[1]),
+                    (bbox[2], bbox[3]),
+                    (bbox[0], bbox[3]),
+                ),
                 provenance={"ocr_provenance": {"approximate_layout": True}},
             )
             for text, bbox in [
@@ -207,7 +213,12 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             TextBoxSpec(
                 text=text,
                 source_pixel_bbox=bbox,
-                source_pixel_polygon=((bbox[0], bbox[1]), (bbox[2], bbox[1]), (bbox[2], bbox[3]), (bbox[0], bbox[3])),
+                source_pixel_polygon=(
+                    (bbox[0], bbox[1]),
+                    (bbox[2], bbox[1]),
+                    (bbox[2], bbox[3]),
+                    (bbox[0], bbox[3]),
+                ),
                 provenance={"ocr_provenance": {"approximate_layout": True}},
             )
             for text, bbox in [
@@ -312,7 +323,12 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             TextBoxSpec(
                 text=text,
                 source_pixel_bbox=bbox,
-                source_pixel_polygon=((bbox[0], bbox[1]), (bbox[2], bbox[1]), (bbox[2], bbox[3]), (bbox[0], bbox[3])),
+                source_pixel_polygon=(
+                    (bbox[0], bbox[1]),
+                    (bbox[2], bbox[1]),
+                    (bbox[2], bbox[3]),
+                    (bbox[0], bbox[3]),
+                ),
                 provenance={"ocr_provenance": {"approximate_layout": True}},
             )
             for text, bbox in [
@@ -653,7 +669,8 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
         self.assertIsNotNone(helper)
 
         item = OCRTextItem(
-            text="2. 根据用户需求，根据需求，根据用户需求，根据需求，根据用户需求，根据用户需求，" * 4,
+            text="2. 根据用户需求，根据需求，根据用户需求，根据需求，根据用户需求，根据用户需求，"
+            * 4,
             bbox=(0, 0, 120, 62),
             polygon=((0, 0), (120, 0), (120, 62), (0, 62)),
             confidence=0.78,
@@ -898,7 +915,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
     def test_focused_recovery_removes_overlapping_wrong_approximate_text_boxes(self):
         import src.generative_editable_pipeline as pipeline
 
-        helper = getattr(pipeline, "_remove_approximate_text_boxes_replaced_by_focused_recovery", None)
+        helper = getattr(
+            pipeline, "_remove_approximate_text_boxes_replaced_by_focused_recovery", None
+        )
         self.assertIsNotNone(helper)
 
         original = [
@@ -931,7 +950,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
     def test_focused_recovery_replaces_offset_approximate_text_in_same_visual_region(self):
         import src.generative_editable_pipeline as pipeline
 
-        helper = getattr(pipeline, "_remove_approximate_text_boxes_replaced_by_focused_recovery", None)
+        helper = getattr(
+            pipeline, "_remove_approximate_text_boxes_replaced_by_focused_recovery", None
+        )
         self.assertIsNotNone(helper)
 
         original = [
@@ -963,7 +984,6 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
     def test_recovery_marks_noise_candidates_as_non_blocking(self):
         import src.generative_editable_pipeline as pipeline
-        from src.generative_editable_providers import OCRTextItem
 
         helper = getattr(pipeline, "_visual_text_coverage_issues", None)
         self.assertIsNotNone(helper)
@@ -1236,7 +1256,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             page = read_page_manifest(artifact_root / "job-1" / deck.page_manifest_paths[0])
 
         self.assertEqual(page.chosen_background, "backgrounds/0000-slide-a/base-clean.png")
-        self.assertNotEqual(page.provenance.get("chosen_background_kind"), "source_preserving_text_clean")
+        self.assertNotEqual(
+            page.provenance.get("chosen_background_kind"), "source_preserving_text_clean"
+        )
         self.assertNotIn("source_preserving", page.provenance.get("backgrounds", {}))
 
     def test_pipeline_uses_source_raster_guardrail_when_approximate_ocr_layout_is_unreliable(self):
@@ -1275,7 +1297,7 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                         polygon=((20, 92), (380, 92), (380, 142), (20, 142)),
                         confidence=0.9,
                         provenance={"layout_source": "uniform_fallback"},
-                    )
+                    ),
                 ]
                 return OCRResult(
                     source_image_path=image_path,
@@ -1464,7 +1486,7 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                         polygon=((20, 92), (380, 92), (380, 142), (20, 142)),
                         confidence=0.9,
                         provenance={"layout_source": "uniform_fallback"},
-                    )
+                    ),
                 ]
                 return OCRResult(
                     source_image_path=image_path,
@@ -1531,7 +1553,6 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
         from PIL import Image, ImageDraw
 
         from src.generative_editable_config import load_generative_editable_config
-        from src.generative_editable_manifest import read_deck_manifest, read_page_manifest
         from src.generative_editable_pipeline import (
             AssetBuildResult,
             GenerativeEditablePipelineDependencies,
@@ -1609,14 +1630,18 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
             with self.assertRaises(ProviderError) as caught:
                 run_generative_editable_pipeline(
-                    slides=[GenerativeEditableSlideInput(slide_id="slide-a", image_path=str(source))],
+                    slides=[
+                        GenerativeEditableSlideInput(slide_id="slide-a", image_path=str(source))
+                    ],
                     output_path=str(output_path),
                     artifact_root=str(artifact_root),
                     job_id="job-1",
                     dependencies=GenerativeEditablePipelineDependencies(
                         ocr_provider=DenseApproximateOCRProvider(config.ocr),
                         image_edit_provider=FailingImageEditProvider(config.clean_base_model),
-                        image_generation_provider=FakeImageGenerationProvider(config.generation_model),
+                        image_generation_provider=FakeImageGenerationProvider(
+                            config.generation_model
+                        ),
                         foreground_planner=lambda **kwargs: [],
                         asset_builder=lambda **kwargs: AssetBuildResult(bitmap_assets=[]),
                         visual_text_candidate_detector=lambda **kwargs: [
@@ -1637,7 +1662,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                     ),
                 )
 
-        self.assertIn(caught.exception.operation, {"text_clean_background", "base_clean_background"})
+        self.assertIn(
+            caught.exception.operation, {"text_clean_background", "base_clean_background"}
+        )
 
     def test_text_validation_marks_source_raster_guardrail_as_degraded(self):
         import src.generative_editable_pipeline as pipeline
@@ -1757,7 +1784,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
         self.assertEqual(report.status, "passed")
         self.assertEqual(report.issues, [])
 
-    def test_bitmap_coverage_validation_allows_infographic_assets_with_dense_editable_structure(self):
+    def test_bitmap_coverage_validation_allows_infographic_assets_with_dense_editable_structure(
+        self,
+    ):
         import src.generative_editable_pipeline as pipeline
 
         helper = getattr(pipeline, "_bitmap_coverage_validation_report", None)
@@ -2003,7 +2032,7 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                                     "asset_strategy": "masked_source_element",
                                     "background_difference_alpha": True,
                                 },
-                            )
+                            ),
                         ]
                     ),
                     visual_text_candidate_detector=lambda **kwargs: [],
@@ -2019,8 +2048,12 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             deck = read_deck_manifest(artifact_root / "job-1" / "deck.json")
             page = read_page_manifest(artifact_root / "job-1" / deck.page_manifest_paths[0])
 
-        self.assertNotEqual(page.provenance.get("chosen_background_kind"), "source_preserving_text_clean")
-        self.assertEqual([asset.asset_id for asset in page.bitmap_assets], ["oversized-source", "small-icon"])
+        self.assertNotEqual(
+            page.provenance.get("chosen_background_kind"), "source_preserving_text_clean"
+        )
+        self.assertEqual(
+            [asset.asset_id for asset in page.bitmap_assets], ["oversized-source", "small-icon"]
+        )
 
     def test_diff_alpha_source_preserved_asset_is_not_treated_as_oversized_source_crop(self):
         import src.generative_editable_pipeline as pipeline
@@ -2250,7 +2283,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
         self.assertEqual(filtered, [panel])
 
-    def test_structural_container_bitmap_candidate_is_dropped_when_native_shapes_cover_children(self):
+    def test_structural_container_bitmap_candidate_is_dropped_when_native_shapes_cover_children(
+        self,
+    ):
         from PIL import Image, ImageDraw
 
         from src.generative_editable_foreground_planner import ForegroundCandidate
@@ -2260,8 +2295,12 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source = Path(tmp) / "source.png"
             image = Image.new("RGB", (800, 450), "#050B16")
             draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle((40, 80, 760, 190), radius=18, fill="#0B2140", outline="#1D4ED8", width=3)
-            draw.rounded_rectangle((40, 220, 760, 330), radius=18, fill="#0B2140", outline="#1D4ED8", width=3)
+            draw.rounded_rectangle(
+                (40, 80, 760, 190), radius=18, fill="#0B2140", outline="#1D4ED8", width=3
+            )
+            draw.rounded_rectangle(
+                (40, 220, 760, 330), radius=18, fill="#0B2140", outline="#1D4ED8", width=3
+            )
             draw.line((120, 140, 700, 140), fill="#38BDF8", width=3)
             draw.line((120, 280, 700, 280), fill="#38BDF8", width=3)
             image.save(source)
@@ -2274,7 +2313,10 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                         area=740 * 270,
                         classification="complex_whole_visual",
                         confidence=0.86,
-                        provenance={"detection": "source_base_difference", "reason": "large_or_visually_complex"},
+                        provenance={
+                            "detection": "source_base_difference",
+                            "reason": "large_or_visually_complex",
+                        },
                     ),
                     ForegroundCandidate(
                         candidate_id="panel-1",
@@ -2282,7 +2324,10 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                         area=720 * 110,
                         classification="native_shape_candidate",
                         confidence=0.94,
-                        provenance={"detection": "source_native_shape_scan", "shape_hint": "rounded_rectangle"},
+                        provenance={
+                            "detection": "source_native_shape_scan",
+                            "shape_hint": "rounded_rectangle",
+                        },
                     ),
                     ForegroundCandidate(
                         candidate_id="panel-2",
@@ -2290,7 +2335,10 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                         area=720 * 110,
                         classification="native_shape_candidate",
                         confidence=0.94,
-                        provenance={"detection": "source_native_shape_scan", "shape_hint": "rounded_rectangle"},
+                        provenance={
+                            "detection": "source_native_shape_scan",
+                            "shape_hint": "rounded_rectangle",
+                        },
                     ),
                     ForegroundCandidate(
                         candidate_id="line-1",
@@ -2325,7 +2373,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             )
 
         self.assertGreaterEqual(len(native_shapes), 4)
-        self.assertNotIn("large-container", [candidate.candidate_id for candidate in bitmap_candidates])
+        self.assertNotIn(
+            "large-container", [candidate.candidate_id for candidate in bitmap_candidates]
+        )
 
     def test_structural_container_drop_accepts_many_native_children_with_quarter_coverage(self):
         import src.generative_editable_pipeline as pipeline
@@ -2599,7 +2649,10 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             )
 
         self.assertTrue(
-            any(candidate.provenance["detection"] == "source_generic_visual_anchor" for candidate in augmented)
+            any(
+                candidate.provenance["detection"] == "source_generic_visual_anchor"
+                for candidate in augmented
+            )
         )
 
     def test_generic_visual_anchors_are_added_for_cover_title_slides_with_wide_lower_photo(self):
@@ -2638,7 +2691,10 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             )
 
         self.assertTrue(
-            any(candidate.provenance["detection"] == "source_generic_visual_anchor" for candidate in augmented)
+            any(
+                candidate.provenance["detection"] == "source_generic_visual_anchor"
+                for candidate in augmented
+            )
         )
 
     def test_cover_title_slide_adds_wide_lower_source_visual_anchor(self):
@@ -2735,7 +2791,10 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             )
 
         self.assertFalse(
-            any(candidate.provenance["detection"] == "cover_title_lower_visual_anchor" for candidate in augmented)
+            any(
+                candidate.provenance["detection"] == "cover_title_lower_visual_anchor"
+                for candidate in augmented
+            )
         )
 
     def test_generic_visual_anchor_source_asset_uses_background_alpha(self):
@@ -2849,7 +2908,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             Image.new("RGB", (200, 120), "#061020").save(background)
             source_image = Image.new("RGB", (200, 120), "#061020")
             draw = ImageDraw.Draw(source_image)
-            draw.rounded_rectangle((40, 30, 160, 90), radius=10, fill="#0B2140", outline="#1D4ED8", width=2)
+            draw.rounded_rectangle(
+                (40, 30, 160, 90), radius=10, fill="#0B2140", outline="#1D4ED8", width=2
+            )
             draw.rectangle((86, 50, 116, 70), fill="#DCEAFE")
             source_image.save(source)
 
@@ -2901,7 +2962,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             [candidate.candidate_id for candidate in expanded],
             ["fg-wide-band-1", "fg-wide-band-2", "fg-wide-band-3"],
         )
-        self.assertTrue(all(candidate.classification == "complex_whole_visual" for candidate in expanded))
+        self.assertTrue(
+            all(candidate.classification == "complex_whole_visual" for candidate in expanded)
+        )
         self.assertEqual(expanded[0].provenance["detection"], "split_edge_spanning_difference")
         self.assertEqual(expanded[0].provenance["parent_candidate_id"], "fg-wide")
 
@@ -2930,7 +2993,10 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             ["fg-layered-band-1", "fg-layered-band-2", "fg-layered-band-3"],
         )
         self.assertTrue(
-            all(candidate.provenance["detection"] == "split_large_layered_difference" for candidate in expanded)
+            all(
+                candidate.provenance["detection"] == "split_large_layered_difference"
+                for candidate in expanded
+            )
         )
         self.assertLess(
             max(candidate.area for candidate in expanded) / float(1706 * 960),
@@ -2972,9 +3038,15 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source = Path(tmp) / "source.png"
             image = Image.new("RGB", (1600, 940), "#020817")
             draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle((0, 150, 1600, 405), radius=22, fill="#0B2140", outline="#1D4ED8", width=3)
-            draw.rounded_rectangle((0, 405, 1600, 660), radius=22, fill="#0B2140", outline="#1D4ED8", width=3)
-            draw.rounded_rectangle((0, 660, 1600, 920), radius=22, fill="#0B2140", outline="#1D4ED8", width=3)
+            draw.rounded_rectangle(
+                (0, 150, 1600, 405), radius=22, fill="#0B2140", outline="#1D4ED8", width=3
+            )
+            draw.rounded_rectangle(
+                (0, 405, 1600, 660), radius=22, fill="#0B2140", outline="#1D4ED8", width=3
+            )
+            draw.rounded_rectangle(
+                (0, 660, 1600, 920), radius=22, fill="#0B2140", outline="#1D4ED8", width=3
+            )
             image.save(source)
 
             native_shapes, bitmap_candidates = _plan_reconstruction_targets(
@@ -2999,7 +3071,10 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
         self.assertTrue(all(shape.shape_type == "rounded_rectangle" for shape in promoted))
         self.assertTrue(all(shape.opacity == 0.15 for shape in promoted))
         self.assertFalse(
-            any(candidate.candidate_id.startswith("fg-wide-band-") for candidate in bitmap_candidates)
+            any(
+                candidate.candidate_id.startswith("fg-wide-band-")
+                for candidate in bitmap_candidates
+            )
         )
 
     def test_reconstruction_targets_promote_large_card_containers_to_native_shapes(self):
@@ -3082,7 +3157,10 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             ["left-card", "right-card"],
         )
         self.assertFalse(
-            any(candidate.candidate_id in {"left-card", "right-card"} for candidate in bitmap_candidates)
+            any(
+                candidate.candidate_id in {"left-card", "right-card"}
+                for candidate in bitmap_candidates
+            )
         )
         self.assertTrue(
             any(candidate.candidate_id == "left-icon" for candidate in bitmap_candidates)
@@ -3136,9 +3214,14 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             )
 
         self.assertFalse(
-            any(shape.provenance.get("parent_candidate_id") == "screenshot" for shape in native_shapes)
+            any(
+                shape.provenance.get("parent_candidate_id") == "screenshot"
+                for shape in native_shapes
+            )
         )
-        self.assertTrue(any(candidate.candidate_id == "screenshot" for candidate in bitmap_candidates))
+        self.assertTrue(
+            any(candidate.candidate_id == "screenshot" for candidate in bitmap_candidates)
+        )
 
     def test_reconstruction_targets_promote_large_card_container_with_native_children(self):
         from PIL import Image, ImageDraw
@@ -3150,7 +3233,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source = Path(tmp) / "source.png"
             image = Image.new("RGB", (1000, 600), "#020817")
             draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle((40, 90, 450, 480), radius=18, fill="#071B36", outline="#1D4ED8", width=3)
+            draw.rounded_rectangle(
+                (40, 90, 450, 480), radius=18, fill="#071B36", outline="#1D4ED8", width=3
+            )
             draw.line((80, 210, 410, 210), fill="#94A3B8", width=3)
             draw.line((80, 330, 410, 330), fill="#94A3B8", width=3)
             image.save(source)
@@ -3197,11 +3282,18 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             )
 
         self.assertTrue(
-            any(shape.provenance.get("parent_candidate_id") == "left-card" for shape in native_shapes)
+            any(
+                shape.provenance.get("parent_candidate_id") == "left-card"
+                for shape in native_shapes
+            )
         )
-        self.assertFalse(any(candidate.candidate_id == "left-card" for candidate in bitmap_candidates))
+        self.assertFalse(
+            any(candidate.candidate_id == "left-card" for candidate in bitmap_candidates)
+        )
 
-    def test_reconstruction_targets_promote_card_container_when_candidate_is_trimmed_inside_border(self):
+    def test_reconstruction_targets_promote_card_container_when_candidate_is_trimmed_inside_border(
+        self,
+    ):
         from PIL import Image, ImageDraw
 
         from src.generative_editable_foreground_planner import ForegroundCandidate
@@ -3211,7 +3303,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source = Path(tmp) / "source.png"
             image = Image.new("RGB", (1000, 600), "#020817")
             draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle((40, 90, 450, 480), radius=18, fill="#071B36", outline="#1D4ED8", width=3)
+            draw.rounded_rectangle(
+                (40, 90, 450, 480), radius=18, fill="#071B36", outline="#1D4ED8", width=3
+            )
             draw.line((80, 210, 410, 210), fill="#94A3B8", width=3)
             draw.line((80, 330, 410, 330), fill="#94A3B8", width=3)
             image.save(source)
@@ -3258,9 +3352,14 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             )
 
         self.assertTrue(
-            any(shape.provenance.get("parent_candidate_id") == "trimmed-card" for shape in native_shapes)
+            any(
+                shape.provenance.get("parent_candidate_id") == "trimmed-card"
+                for shape in native_shapes
+            )
         )
-        self.assertFalse(any(candidate.candidate_id == "trimmed-card" for candidate in bitmap_candidates))
+        self.assertFalse(
+            any(candidate.candidate_id == "trimmed-card" for candidate in bitmap_candidates)
+        )
 
     def test_reconstruction_targets_do_not_promote_framed_high_texture_screenshot(self):
         from PIL import Image, ImageDraw
@@ -3272,7 +3371,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source = Path(tmp) / "source.png"
             image = Image.new("RGB", (1000, 600), "#020817")
             draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle((120, 100, 700, 450), radius=18, fill="#071B36", outline="#1D4ED8", width=3)
+            draw.rounded_rectangle(
+                (120, 100, 700, 450), radius=18, fill="#071B36", outline="#1D4ED8", width=3
+            )
             for y in range(120, 430):
                 for x in range(145, 675):
                     red = (x * 7 + y * 3) % 255
@@ -3311,9 +3412,14 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             )
 
         self.assertFalse(
-            any(shape.provenance.get("parent_candidate_id") == "framed-screenshot" for shape in native_shapes)
+            any(
+                shape.provenance.get("parent_candidate_id") == "framed-screenshot"
+                for shape in native_shapes
+            )
         )
-        self.assertTrue(any(candidate.candidate_id == "framed-screenshot" for candidate in bitmap_candidates))
+        self.assertTrue(
+            any(candidate.candidate_id == "framed-screenshot" for candidate in bitmap_candidates)
+        )
 
     def test_reconstruction_targets_do_not_promote_nested_screenshot_inside_card_container(self):
         from PIL import Image, ImageDraw
@@ -3325,7 +3431,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source = Path(tmp) / "source.png"
             image = Image.new("RGB", (1000, 600), "#020817")
             draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle((100, 90, 850, 450), radius=18, fill="#071B36", outline="#1D4ED8", width=3)
+            draw.rounded_rectangle(
+                (100, 90, 850, 450), radius=18, fill="#071B36", outline="#1D4ED8", width=3
+            )
             for y in range(140, 390):
                 for x in range(260, 760):
                     red = (x * 7 + y * 3) % 255
@@ -3371,12 +3479,20 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             )
 
         self.assertTrue(
-            any(shape.provenance.get("parent_candidate_id") == "outer-card" for shape in native_shapes)
+            any(
+                shape.provenance.get("parent_candidate_id") == "outer-card"
+                for shape in native_shapes
+            )
         )
         self.assertFalse(
-            any(shape.provenance.get("parent_candidate_id") == "inner-screenshot" for shape in native_shapes)
+            any(
+                shape.provenance.get("parent_candidate_id") == "inner-screenshot"
+                for shape in native_shapes
+            )
         )
-        self.assertTrue(any(candidate.candidate_id == "inner-screenshot" for candidate in bitmap_candidates))
+        self.assertTrue(
+            any(candidate.candidate_id == "inner-screenshot" for candidate in bitmap_candidates)
+        )
 
     def test_domain_row_visual_anchor_bboxes_use_space_between_label_and_specs(self):
         import src.generative_editable_pipeline as pipeline
@@ -3726,7 +3842,12 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             native_shapes = [
                 NativeShapeSpec(
                     shape_type="rounded_rectangle",
-                    source_pixel_bbox=(10 + (i % 10) * 32, 45 + (i // 10) * 42, 34 + (i % 10) * 32, 69 + (i // 10) * 42),
+                    source_pixel_bbox=(
+                        10 + (i % 10) * 32,
+                        45 + (i // 10) * 42,
+                        34 + (i % 10) * 32,
+                        69 + (i // 10) * 42,
+                    ),
                     fill_color="#123456",
                 )
                 for i in range(20)
@@ -3757,7 +3878,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
         self.assertFalse(should_choose)
 
-    def test_source_preserving_background_is_not_chosen_for_many_native_shapes_with_few_bitmap_assets(self):
+    def test_source_preserving_background_is_not_chosen_for_many_native_shapes_with_few_bitmap_assets(
+        self,
+    ):
         from PIL import Image
 
         import src.generative_editable_pipeline as pipeline
@@ -3822,7 +3945,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
         self.assertFalse(should_choose)
 
-    def test_source_raster_guardrail_does_not_trigger_for_many_tall_short_warning_only_text_boxes(self):
+    def test_source_raster_guardrail_does_not_trigger_for_many_tall_short_warning_only_text_boxes(
+        self,
+    ):
         import src.generative_editable_pipeline as pipeline
 
         helper = getattr(pipeline, "_should_use_source_raster_guardrail", None)
@@ -3898,8 +4023,16 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             ),
         ]
         text_issues = [
-            {"code": "ignored_spurious_ocr", "severity": "warning", "ocr_text": "基于增程系统消除长距离出行焦虑"},
-            {"code": "ignored_spurious_ocr", "severity": "warning", "ocr_text": "从用户安全与长期用车角度建立系统性落地指南"},
+            {
+                "code": "ignored_spurious_ocr",
+                "severity": "warning",
+                "ocr_text": "基于增程系统消除长距离出行焦虑",
+            },
+            {
+                "code": "ignored_spurious_ocr",
+                "severity": "warning",
+                "ocr_text": "从用户安全与长期用车角度建立系统性落地指南",
+            },
         ]
 
         should_guard = helper(
@@ -4508,7 +4641,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             self.assertEqual(result.status, "passed")
             self.assertEqual([shape.shape_type for shape in page.native_shapes], ["rectangle"])
             self.assertEqual([asset.asset_id for asset in page.bitmap_assets], ["asset-001"])
-            self.assertTrue(Path(artifact_root / "job-1" / page.bitmap_assets[0].asset_path).exists())
+            self.assertTrue(
+                Path(artifact_root / "job-1" / page.bitmap_assets[0].asset_path).exists()
+            )
             self.assertEqual([sheet.sheet_id for sheet in page.asset_sheets], ["asset-sheet-0000"])
             self.assertEqual(page.asset_sheets[0].candidate_ids, ["asset-001"])
             self.assertIn("asset_sheet", edit_prompt_ids)
@@ -4636,7 +4771,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             asset_builder_calls[0]["asset_reference_image_path"],
             asset_builder_calls[0]["source_image_path"],
         )
-        self.assertTrue(asset_builder_calls[0]["asset_reference_image_path"].endswith("text-clean.png"))
+        self.assertTrue(
+            asset_builder_calls[0]["asset_reference_image_path"].endswith("text-clean.png")
+        )
         self.assertEqual(page.bitmap_assets, [])
         self.assertEqual(page.native_shapes, [])
         self.assertTrue(page.text_boxes[0].style_hints["approximate_layout"])
@@ -4839,7 +4976,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                 source_image_path=str(source),
             )
 
-        self.assertEqual([candidate.candidate_id for candidate in bitmap_candidates], ["real-object"])
+        self.assertEqual(
+            [candidate.candidate_id for candidate in bitmap_candidates], ["real-object"]
+        )
 
     def test_reconstruction_targets_merge_nearby_bitmap_fragments(self):
         from PIL import Image, ImageDraw
@@ -4885,7 +5024,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
         self.assertEqual(len(bitmap_candidates), 2)
         self.assertEqual(bitmap_candidates[0].source_pixel_bbox, (60, 80, 189, 141))
-        self.assertEqual(bitmap_candidates[0].provenance["merged_candidate_ids"], ["near-left", "near-right"])
+        self.assertEqual(
+            bitmap_candidates[0].provenance["merged_candidate_ids"], ["near-left", "near-right"]
+        )
         self.assertEqual(bitmap_candidates[1].candidate_id, "far")
 
     def test_masked_source_element_assets_preserve_visuals_and_remove_text_pixels(self):
@@ -5094,7 +5235,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
         self.assertGreater(assets[0].source_pixel_bbox[2] - assets[0].source_pixel_bbox[0], 160)
         self.assertFalse(assets[0].provenance["smooth_background_difference_suppressed"])
 
-    def test_domain_row_visual_anchor_does_not_collapse_to_one_object_when_multiple_visuals_exist(self):
+    def test_domain_row_visual_anchor_does_not_collapse_to_one_object_when_multiple_visuals_exist(
+        self,
+    ):
         from PIL import Image, ImageDraw
 
         from src.generative_editable_foreground_planner import ForegroundCandidate
@@ -5114,7 +5257,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source_image = Image.new("RGB", (360, 160), "#061020")
             source_draw = ImageDraw.Draw(source_image)
             source_draw.rounded_rectangle((20, 30, 340, 130), radius=10, fill="#12304F")
-            source_draw.rounded_rectangle((74, 58, 166, 106), radius=6, fill="#07111E", outline="#1F2937", width=3)
+            source_draw.rounded_rectangle(
+                (74, 58, 166, 106), radius=6, fill="#07111E", outline="#1F2937", width=3
+            )
             source_draw.ellipse((236, 54, 304, 116), fill="#1F2937", outline="#CBD5E1", width=4)
             source_draw.ellipse((258, 76, 282, 100), fill="#94A3B8")
             source_image.save(source)
@@ -5178,7 +5323,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
             with Image.open(root / assets[0].asset_path).convert("RGBA") as asset_image:
                 edge_alpha = asset_image.getpixel((0, asset_image.height // 2))[3]
-                center_alpha = asset_image.getpixel((asset_image.width // 2, asset_image.height // 2))[3]
+                center_alpha = asset_image.getpixel(
+                    (asset_image.width // 2, asset_image.height // 2)
+                )[3]
 
         self.assertLess(edge_alpha, center_alpha)
         self.assertEqual(center_alpha, 255)
@@ -5194,7 +5341,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source = Path(tmp) / "source.png"
             image = Image.new("RGB", (240, 140), "#F8FAFC")
             draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle((30, 20, 130, 70), radius=12, fill="#FEF3C7", outline="#D97706", width=3)
+            draw.rounded_rectangle(
+                (30, 20, 130, 70), radius=12, fill="#FEF3C7", outline="#D97706", width=3
+            )
             draw.line((150, 110, 220, 80), fill="#7C3AED", width=5)
             image.save(source)
 
@@ -5234,10 +5383,14 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                 source_image_path=str(source),
             )
 
-        self.assertEqual([shape.shape_type for shape in native_shapes], ["rounded_rectangle", "line"])
+        self.assertEqual(
+            [shape.shape_type for shape in native_shapes], ["rounded_rectangle", "line"]
+        )
         self.assertEqual(bitmap_candidates, [])
 
-    def test_reconstruction_targets_ignore_full_page_diff_and_tiny_fragments_inside_native_shapes(self):
+    def test_reconstruction_targets_ignore_full_page_diff_and_tiny_fragments_inside_native_shapes(
+        self,
+    ):
         from PIL import Image, ImageDraw
 
         from src.generative_editable_foreground_planner import ForegroundCandidate
@@ -5247,7 +5400,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source = Path(tmp) / "source.png"
             image = Image.new("RGB", (800, 450), "#F8FAFC")
             draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle((48, 46, 752, 118), radius=18, fill="#E0F2FE", outline="#0284C7", width=3)
+            draw.rounded_rectangle(
+                (48, 46, 752, 118), radius=18, fill="#E0F2FE", outline="#0284C7", width=3
+            )
             draw.text((82, 66), "Quarterly Plan", fill="#0F172A")
             image.save(source)
 
@@ -5363,8 +5518,12 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             image = Image.new("RGB", (220, 140), "#F8FAFC")
             draw = ImageDraw.Draw(image)
             draw.rectangle((30, 40, 120, 90), fill="#2563EB")
-            draw.rounded_rectangle((30, 12, 120, 30), radius=8, fill="#E0F2FE", outline="#0284C7", width=2)
-            draw.rounded_rectangle((132, 40, 200, 90), radius=12, fill="#FEF3C7", outline="#D97706", width=2)
+            draw.rounded_rectangle(
+                (30, 12, 120, 30), radius=8, fill="#E0F2FE", outline="#0284C7", width=2
+            )
+            draw.rounded_rectangle(
+                (132, 40, 200, 90), radius=12, fill="#FEF3C7", outline="#D97706", width=2
+            )
             draw.line((145, 118, 205, 104), fill="#7C3AED", width=4)
             image.save(source)
             Image.new("L", (220, 140), 0).save(mask)
@@ -5390,8 +5549,15 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             image = Image.new("RGB", (800, 450), "#F8FAFC")
             draw = ImageDraw.Draw(image)
             draw.text((72, 46), "Complex Visual", fill="#0F172A")
-            draw.polygon([(90, 360), (250, 250), (430, 310), (700, 170), (700, 383), (90, 383)], fill="#DBEAFE")
-            draw.line([(100, 330), (190, 260), (290, 286), (398, 198), (520, 224), (680, 146)], fill="#2563EB", width=4)
+            draw.polygon(
+                [(90, 360), (250, 250), (430, 310), (700, 170), (700, 383), (90, 383)],
+                fill="#DBEAFE",
+            )
+            draw.line(
+                [(100, 330), (190, 260), (290, 286), (398, 198), (520, 224), (680, 146)],
+                fill="#2563EB",
+                width=4,
+            )
             image.save(source)
 
             native_shapes, bitmap_candidates = _plan_reconstruction_targets(
@@ -5526,7 +5692,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
         self.assertEqual(mask.getpixel((32, 28)), 255)
         self.assertEqual(mask.getpixel((300, 145)), 0)
 
-    def test_pipeline_adds_source_native_shapes_even_when_base_clean_provider_returns_candidates(self):
+    def test_pipeline_adds_source_native_shapes_even_when_base_clean_provider_returns_candidates(
+        self,
+    ):
         from PIL import Image, ImageDraw
 
         from src.generative_editable_config import load_generative_editable_config
@@ -5597,7 +5765,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             artifact_root = Path(tmp) / "jobs"
             image = Image.new("RGB", (240, 140), "#F8FAFC")
             draw = ImageDraw.Draw(image)
-            draw.rounded_rectangle((30, 20, 130, 70), radius=12, fill="#FEF3C7", outline="#D97706", width=3)
+            draw.rounded_rectangle(
+                (30, 20, 130, 70), radius=12, fill="#FEF3C7", outline="#D97706", width=3
+            )
             draw.line((150, 110, 220, 80), fill="#7C3AED", width=5)
             image.save(source)
 
@@ -5625,7 +5795,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             page = read_page_manifest(artifact_root / "job-1" / deck.page_manifest_paths[0])
 
         self.assertEqual(result.status, "passed")
-        self.assertEqual([shape.shape_type for shape in page.native_shapes], ["rounded_rectangle", "line"])
+        self.assertEqual(
+            [shape.shape_type for shape in page.native_shapes], ["rounded_rectangle", "line"]
+        )
         self.assertEqual(page.bitmap_assets, [])
         self.assertEqual(
             page.chosen_background,
@@ -5840,7 +6012,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                     asset_sizes.append(asset_image.size)
                     asset_pixels.append(asset_image.convert("RGBA").getbbox())
 
-        self.assertEqual([asset.asset_id for asset in result.bitmap_assets], ["blue-block", "green-dot"])
+        self.assertEqual(
+            [asset.asset_id for asset in result.bitmap_assets], ["blue-block", "green-dot"]
+        )
         self.assertEqual(len(result.asset_sheets), 1)
         self.assertTrue(all(size[0] < 80 and size[1] < 80 for size in asset_sizes))
         self.assertTrue(all(bbox is not None for bbox in asset_pixels))
@@ -6096,7 +6270,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
         self.assertEqual(result.asset_sheets, [])
         self.assertEqual(result.bitmap_assets[0].asset_id, "asset-001")
-        self.assertEqual(result.bitmap_assets[0].provenance["fallback"], "source_crop_after_asset_sheet_failure")
+        self.assertEqual(
+            result.bitmap_assets[0].provenance["fallback"], "source_crop_after_asset_sheet_failure"
+        )
         self.assertEqual(result.provider_output_payload["asset_sheet_fallback"], "source_crops")
         self.assertEqual(asset_size, (41, 31))
 
@@ -6205,7 +6381,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source = root / "sources" / "slide.png"
             source.parent.mkdir(parents=True)
             image = Image.new("RGB", (800, 450), "white")
-            ImageDraw.Draw(image).rectangle((80, 172, 279, 301), fill="#DCFCE7", outline="#16A34A", width=3)
+            ImageDraw.Draw(image).rectangle(
+                (80, 172, 279, 301), fill="#DCFCE7", outline="#16A34A", width=3
+            )
             image.save(source)
 
             with self.assertRaises(ProviderError):
@@ -6259,8 +6437,15 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             source.parent.mkdir(parents=True)
             image = Image.new("RGB", (800, 450), "#F8FAFC")
             draw = ImageDraw.Draw(image)
-            draw.polygon([(90, 360), (250, 250), (430, 310), (700, 170), (700, 383), (90, 383)], fill="#DBEAFE")
-            draw.line([(100, 330), (190, 260), (290, 286), (398, 198), (520, 224), (680, 146)], fill="#2563EB", width=4)
+            draw.polygon(
+                [(90, 360), (250, 250), (430, 310), (700, 170), (700, 383), (90, 383)],
+                fill="#DBEAFE",
+            )
+            draw.line(
+                [(100, 330), (190, 260), (290, 286), (398, 198), (520, 224), (680, 146)],
+                fill="#2563EB",
+                width=4,
+            )
             image.save(source)
             background = root / "background.png"
             Image.new("RGB", (800, 450), "#F8FAFC").save(background)
@@ -6294,13 +6479,17 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
             self.assertEqual(provider.calls, 0)
             self.assertEqual([asset.asset_id for asset in result.bitmap_assets], ["fg-258"])
-            self.assertEqual(result.bitmap_assets[0].provenance["asset_strategy"], "masked_source_element")
+            self.assertEqual(
+                result.bitmap_assets[0].provenance["asset_strategy"], "masked_source_element"
+            )
             self.assertFalse(result.bitmap_assets[0].provenance["text_mask_applied"])
             self.assertFalse(result.bitmap_assets[0].provenance["background_difference_alpha"])
             with Image.open(root / result.bitmap_assets[0].asset_path) as asset_image:
                 alpha = asset_image.convert("RGBA").getchannel("A")
                 self.assertEqual(alpha.getextrema(), (255, 255))
-            self.assertEqual(result.provider_output_payload["asset_strategy"], "masked_source_elements")
+            self.assertEqual(
+                result.provider_output_payload["asset_strategy"], "masked_source_elements"
+            )
 
     def test_complex_whole_visual_skips_multi_component_asset_sheet_slicing(self):
         from PIL import Image, ImageDraw
@@ -6376,7 +6565,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
         self.assertEqual([asset.asset_id for asset in result.bitmap_assets], ["fg-complex"])
         self.assertEqual(provider.calls, 0)
-        self.assertEqual(result.bitmap_assets[0].provenance["asset_strategy"], "masked_source_element")
+        self.assertEqual(
+            result.bitmap_assets[0].provenance["asset_strategy"], "masked_source_element"
+        )
 
     def test_complex_singleton_preservation_keeps_candidate_crop_without_provider_input(self):
         from PIL import Image, ImageDraw
@@ -6456,7 +6647,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
         self.assertEqual(provider.source_image_paths, [])
         self.assertEqual(crop_size, (200, 64))
         self.assertIn("assets", crop_path.parts)
-        self.assertEqual(result.bitmap_assets[0].provenance["asset_strategy"], "masked_source_element")
+        self.assertEqual(
+            result.bitmap_assets[0].provenance["asset_strategy"], "masked_source_element"
+        )
 
     def test_orchestration_text_validation_failure_blocks_success(self):
         from PIL import Image
@@ -6718,9 +6911,7 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                 dependencies=GenerativeEditablePipelineDependencies(
                     ocr_provider=RecoveringOCRProvider(config.ocr),
                     image_edit_provider=FakeImageEditProvider(config.clean_base_model),
-                    image_generation_provider=FakeImageGenerationProvider(
-                        config.generation_model
-                    ),
+                    image_generation_provider=FakeImageGenerationProvider(config.generation_model),
                     visual_text_candidate_detector=lambda **kwargs: [
                         (120, 90, 220, 124),
                         (120, 200, 220, 234),
@@ -6741,7 +6932,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             )
 
         self.assertEqual(page_manifest.validation_status, "passed")
-        self.assertEqual([box.text for box in page_manifest.text_boxes], ["智能域", "动力域", "底盘域"])
+        self.assertEqual(
+            [box.text for box in page_manifest.text_boxes], ["智能域", "动力域", "底盘域"]
+        )
         self.assertEqual(page_manifest.text_boxes[-1].source_pixel_bbox, (120, 200, 220, 234))
         self.assertEqual(page_manifest.provenance["text_issues"], [])
 
@@ -6897,7 +7090,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             edit_provider = RecordingEditProvider()
 
             run_generative_editable_pipeline(
-                slides=[GenerativeEditableSlideInput(slide_id="slide-a", image_path=str(source_path))],
+                slides=[
+                    GenerativeEditableSlideInput(slide_id="slide-a", image_path=str(source_path))
+                ],
                 output_path=str(output_path),
                 artifact_root=str(artifact_root),
                 job_id="job-1",
@@ -6958,15 +7153,13 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                 artifact_root=str(artifact_root),
                 job_id="job-1",
                 fallback_policy="raster_pptx",
-                fallback_output_factory=lambda: fallback_path.write_bytes(b"raster") and str(
-                    fallback_path
+                fallback_output_factory=lambda: (
+                    fallback_path.write_bytes(b"raster") and str(fallback_path)
                 ),
                 dependencies=GenerativeEditablePipelineDependencies(
                     ocr_provider=FakeOCRProvider(config.ocr),
                     image_edit_provider=FakeImageEditProvider(config.clean_base_model),
-                    image_generation_provider=FakeImageGenerationProvider(
-                        config.generation_model
-                    ),
+                    image_generation_provider=FakeImageGenerationProvider(config.generation_model),
                     composer=failing_composer,
                 ),
             )
@@ -7035,8 +7228,8 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                 artifact_root=str(artifact_root),
                 job_id="job-1",
                 fallback_policy="raster_pptx",
-                fallback_output_factory=lambda: fallback_path.write_bytes(b"raster") and str(
-                    fallback_path
+                fallback_output_factory=lambda: (
+                    fallback_path.write_bytes(b"raster") and str(fallback_path)
                 ),
                 dependencies=GenerativeEditablePipelineDependencies(
                     ocr_provider=FailingOCRProvider(),
@@ -7101,8 +7294,8 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                 artifact_root=str(artifact_root),
                 job_id="job-asset-fallback",
                 fallback_policy="raster_pptx",
-                fallback_output_factory=lambda: fallback_path.write_bytes(b"raster") and str(
-                    fallback_path
+                fallback_output_factory=lambda: (
+                    fallback_path.write_bytes(b"raster") and str(fallback_path)
                 ),
                 dependencies=GenerativeEditablePipelineDependencies(
                     ocr_provider=FakeOCRProvider(config.ocr),
@@ -7191,7 +7384,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                     dependencies=GenerativeEditablePipelineDependencies(
                         ocr_provider=FailingOCRProvider(),
                         image_edit_provider=FakeImageEditProvider(config.clean_base_model),
-                        image_generation_provider=FakeImageGenerationProvider(config.generation_model),
+                        image_generation_provider=FakeImageGenerationProvider(
+                            config.generation_model
+                        ),
                         structure_validator=lambda **kwargs: ValidationReport(
                             status="passed", checked_pages=1, issues=[]
                         ),
@@ -7283,7 +7478,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
 
         self.assertEqual(result.status, "passed")
         self.assertEqual(page.text_boxes[0].text, "Metadata Title")
-        self.assertEqual(page.text_boxes[0].provenance["ocr_provenance"]["fallback"], "ocr_provider_failed")
+        self.assertEqual(
+            page.text_boxes[0].provenance["ocr_provenance"]["fallback"], "ocr_provider_failed"
+        )
 
     def test_pipeline_uses_configured_ocr_min_confidence(self):
         from PIL import Image
@@ -7354,7 +7551,9 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                     dependencies=GenerativeEditablePipelineDependencies(
                         ocr_provider=LowConfidenceOCRProvider(),
                         image_edit_provider=FakeImageEditProvider(config.clean_base_model),
-                        image_generation_provider=FakeImageGenerationProvider(config.generation_model),
+                        image_generation_provider=FakeImageGenerationProvider(
+                            config.generation_model
+                        ),
                         structure_validator=lambda **kwargs: ValidationReport(
                             status="passed", checked_pages=1, issues=[]
                         ),
@@ -7396,42 +7595,47 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
         max_active_pages = 0
         processed_slide_ids = []
         lock = threading.Lock()
+        page_barrier = threading.Barrier(2, timeout=5)
 
         def fake_asset_builder(**kwargs):
             nonlocal active_pages, max_active_pages
             with lock:
                 active_pages += 1
                 max_active_pages = max(max_active_pages, active_pages)
-            processed_slide_ids.append(kwargs["slide_id"])
-            time.sleep(0.05)
-            asset = BitmapAssetSpec(
-                asset_id=f"{kwargs['slide_id']}-asset",
-                source_pixel_bbox=(500, 120, 620, 220),
-                asset_path=f"assets/{kwargs['page_index']:04d}-{kwargs['slide_id']}/fg-001.png",
-                z_order=1,
-            )
-            Path(kwargs["asset_root"], asset.asset_path).parent.mkdir(parents=True, exist_ok=True)
-            Image.new("RGBA", (120, 100), (0, 0, 0, 0)).save(
-                Path(kwargs["asset_root"], asset.asset_path)
-            )
-            repair_attempts = []
-            if kwargs["slide_id"] == "slide-b":
-                repair_attempts.append(
-                    RepairAttempt(
-                        target_id=asset.asset_id,
-                        attempt_index=1,
-                        reason="edge_touch",
-                        provider_role="edit_model",
-                        status="passed",
-                    )
+            try:
+                page_barrier.wait()
+                processed_slide_ids.append(kwargs["slide_id"])
+                asset = BitmapAssetSpec(
+                    asset_id=f"{kwargs['slide_id']}-asset",
+                    source_pixel_bbox=(500, 120, 620, 220),
+                    asset_path=f"assets/{kwargs['page_index']:04d}-{kwargs['slide_id']}/fg-001.png",
+                    z_order=1,
                 )
-            with lock:
-                active_pages -= 1
-            return AssetBuildResult(
-                bitmap_assets=[asset],
-                repair_attempts=repair_attempts,
-                provider_output_payload={"candidate_ids": ["should-not-override"]},
-            )
+                Path(kwargs["asset_root"], asset.asset_path).parent.mkdir(
+                    parents=True, exist_ok=True
+                )
+                Image.new("RGBA", (120, 100), (0, 0, 0, 0)).save(
+                    Path(kwargs["asset_root"], asset.asset_path)
+                )
+                repair_attempts = []
+                if kwargs["slide_id"] == "slide-b":
+                    repair_attempts.append(
+                        RepairAttempt(
+                            target_id=asset.asset_id,
+                            attempt_index=1,
+                            reason="edge_touch",
+                            provider_role="edit_model",
+                            status="passed",
+                        )
+                    )
+                return AssetBuildResult(
+                    bitmap_assets=[asset],
+                    repair_attempts=repair_attempts,
+                    provider_output_payload={"candidate_ids": ["should-not-override"]},
+                )
+            finally:
+                with lock:
+                    active_pages -= 1
 
         def fake_composer(deck_manifest_path, artifact_root, output_path):
             deck = read_deck_manifest(deck_manifest_path)
@@ -7513,9 +7717,7 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                 "provider_outputs/image_generation/0000-slide-b/assets.json",
             )
             image_generation_payload = (
-                artifact_root
-                / "job-1"
-                / page_b.provider_output_paths["image_generation"]
+                artifact_root / "job-1" / page_b.provider_output_paths["image_generation"]
             ).read_text(encoding="utf-8")
             self.assertIn("slide-b-asset", image_generation_payload)
             self.assertNotIn("should-not-override", image_generation_payload)
@@ -7686,9 +7888,7 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                 dependencies=GenerativeEditablePipelineDependencies(
                     ocr_provider=FakeOCRProvider(config.ocr),
                     image_edit_provider=FakeImageEditProvider(config.clean_base_model),
-                    image_generation_provider=FakeImageGenerationProvider(
-                        config.generation_model
-                    ),
+                    image_generation_provider=FakeImageGenerationProvider(config.generation_model),
                     composer=fake_composer,
                     structure_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]

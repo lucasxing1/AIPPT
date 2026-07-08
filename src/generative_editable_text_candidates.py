@@ -57,9 +57,8 @@ def _detect_left_blue_label_bboxes(image_path: str | Path) -> list[BBox]:
     red = rgb[:, :, 0].astype(np.int16)
     green = rgb[:, :, 1].astype(np.int16)
     blue = rgb[:, :, 2].astype(np.int16)
-    mask = (
-        ((blue >= 120) & (green >= 70) & ((blue - red) >= 25))
-        | ((green >= 120) & (blue >= 120) & (red <= 140))
+    mask = ((blue >= 120) & (green >= 70) & ((blue - red) >= 25)) | (
+        (green >= 120) & (blue >= 120) & (red <= 140)
     )
     x_limit = max(1, int(width * 0.35))
     left_mask = mask[:, :x_limit]

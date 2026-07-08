@@ -4,6 +4,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw
 
+
 class GenerativeEditableShapeFitterTest(unittest.TestCase):
     def test_fits_high_confidence_rectangle_rounded_rectangle_ellipse_and_line(self):
         from src.generative_editable_foreground_planner import ForegroundCandidate

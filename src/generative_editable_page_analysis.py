@@ -163,7 +163,9 @@ def _visual_candidate_can_anchor_text(
 
 def _is_short_section_label_text(text: str) -> bool:
     stripped = str(text).strip()
-    meaningful = "".join(char for char in stripped if char.isalnum() or "\u3400" <= char <= "\u9fff")
+    meaningful = "".join(
+        char for char in stripped if char.isalnum() or "\u3400" <= char <= "\u9fff"
+    )
     cjk_count = sum(1 for char in meaningful if "\u3400" <= char <= "\u9fff")
     return 2 <= cjk_count <= 5 and meaningful.endswith(("域", "区", "层", "类", "项", "栏"))
 
@@ -175,9 +177,7 @@ def _is_large_top_text_box(
 ) -> bool:
     left, top, right, bottom = bbox
     return (
-        top <= image_height * 0.12
-        and (right - left) >= image_width * 0.25
-        and (bottom - top) >= 20
+        top <= image_height * 0.12 and (right - left) >= image_width * 0.25 and (bottom - top) >= 20
     )
 
 

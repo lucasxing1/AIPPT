@@ -145,7 +145,7 @@ def slice_asset_sheet_by_components(
             min_area=min_component_area,
             merge_gap=24,
             merge_union_growth=2.6,
-            )
+        )
         if len(boxes) < len(candidates):
             raise ValueError(
                 f"asset sheet contains {len(boxes)} component(s), expected at least {len(candidates)}"
@@ -372,7 +372,11 @@ def _remove_chroma_key(crop: Image.Image, chroma_key: tuple[int, int, int]) -> I
     for y in range(output.height):
         for x in range(output.width):
             red, green, blue, alpha = pixels[x, y]
-            if abs(red - chroma_key[0]) <= 8 and abs(green - chroma_key[1]) <= 8 and abs(blue - chroma_key[2]) <= 8:
+            if (
+                abs(red - chroma_key[0]) <= 8
+                and abs(green - chroma_key[1]) <= 8
+                and abs(blue - chroma_key[2]) <= 8
+            ):
                 pixels[x, y] = (red, green, blue, 0)
             else:
                 pixels[x, y] = (red, green, blue, alpha)
@@ -463,9 +467,8 @@ def _remove_light_neutral_border_background(image: Image.Image) -> Image.Image:
         for x in range(output.width):
             red, green, blue, alpha = pixels[x, y]
             rgb = (red, green, blue)
-            if (
-                min_luma <= _luma(rgb) <= max_luma
-                and _is_light_neutral(rgb, min_luma=min_luma, max_channel_delta=30)
+            if min_luma <= _luma(rgb) <= max_luma and _is_light_neutral(
+                rgb, min_luma=min_luma, max_channel_delta=30
             ):
                 pixels[x, y] = (red, green, blue, 0)
             else:
@@ -518,13 +521,7 @@ def _is_light_neutral(
 
 def _is_magenta_chroma(pixel: tuple[int, int, int]) -> bool:
     red, green, blue = pixel
-    return (
-        red >= 170
-        and blue >= 160
-        and green <= 130
-        and red - green >= 70
-        and blue - green >= 60
-    )
+    return red >= 170 and blue >= 160 and green <= 130 and red - green >= 70 and blue - green >= 60
 
 
 def _luma(pixel: tuple[int, int, int]) -> int:
@@ -540,11 +537,7 @@ def _component_boxes_from_alpha(
     merge_union_growth: float,
 ) -> list[tuple[int, int, int, int]]:
     components = _connected_components(_opaque_pixels(image))
-    boxes = [
-        _box_from_points(component)
-        for component in components
-        if len(component) >= min_area
-    ]
+    boxes = [_box_from_points(component) for component in components if len(component) >= min_area]
     return _merge_nearby_boxes(boxes, gap=merge_gap, max_union_growth=merge_union_growth)
 
 
@@ -654,7 +647,9 @@ def _reading_order_boxes(
         for row_index, row_center in enumerate(row_centers):
             if abs(center_y - row_center) <= row_threshold:
                 rows[row_index].append(box)
-                row_centers[row_index] = sum(_box_center_y(item) for item in rows[row_index]) / len(rows[row_index])
+                row_centers[row_index] = sum(_box_center_y(item) for item in rows[row_index]) / len(
+                    rows[row_index]
+                )
                 break
         else:
             rows.append([box])

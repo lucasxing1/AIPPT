@@ -160,7 +160,9 @@ class GenerativeEditableComposerTest(unittest.TestCase):
             prs = Presentation(str(output))
             slide = prs.slides[0]
             shape_types = [shape.shape_type for shape in slide.shapes]
-            texts = [shape.text for shape in slide.shapes if shape.has_text_frame and shape.text.strip()]
+            texts = [
+                shape.text for shape in slide.shapes if shape.has_text_frame and shape.text.strip()
+            ]
             slide_xml = self._slide_xml(output, 1)
 
         self.assertEqual(
@@ -327,7 +329,9 @@ class GenerativeEditableComposerTest(unittest.TestCase):
             prs = Presentation(str(output))
             slide = prs.slides[0]
             texts = [shape.text for shape in slide.shapes if shape.has_text_frame]
-            auto_shapes = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE]
+            auto_shapes = [
+                shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.AUTO_SHAPE
+            ]
 
         self.assertIn("Quarterly Plan", texts)
         self.assertEqual(len(auto_shapes), 1)
@@ -338,7 +342,9 @@ class GenerativeEditableComposerTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            self._write_fixture_assets(root, slide_ids=("slide-b", "slide-a"), image_size=(800, 600))
+            self._write_fixture_assets(
+                root, slide_ids=("slide-b", "slide-a"), image_size=(800, 600)
+            )
             page_b = self._page_manifest(
                 root,
                 slide_id="slide-b",
@@ -530,9 +536,7 @@ class GenerativeEditableComposerTest(unittest.TestCase):
             suffix = f"{index:04d}-{slide_id}"
             (root / "backgrounds" / suffix).mkdir(parents=True, exist_ok=True)
             (root / "assets" / suffix).mkdir(parents=True, exist_ok=True)
-            Image.new("RGB", image_size, "#F8FAFC").save(
-                root / "backgrounds" / suffix / "base.png"
-            )
+            Image.new("RGB", image_size, "#F8FAFC").save(root / "backgrounds" / suffix / "base.png")
             asset = Image.new("RGBA", (120, 80), (0, 0, 0, 0))
             for x in range(20, 100):
                 for y in range(18, 62):

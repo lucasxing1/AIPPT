@@ -196,11 +196,11 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
         original_vlm_dependencies = export_route._build_vlm_editable_pipeline_dependencies
         asyncio.to_thread = fake_to_thread
         export_route._export_pptx = fake_export_pptx
-        export_route._build_generative_editable_pipeline_dependencies = (
-            lambda: _fake_route_dependencies(validation_status="failed")
+        export_route._build_generative_editable_pipeline_dependencies = lambda: (
+            _fake_route_dependencies(validation_status="failed")
         )
-        export_route._build_vlm_editable_pipeline_dependencies = (
-            lambda config: _fake_vlm_route_dependencies(validation_status="failed")
+        export_route._build_vlm_editable_pipeline_dependencies = lambda config: (
+            _fake_vlm_route_dependencies(validation_status="failed")
         )
         try:
             request = ExportRequest(
@@ -216,9 +216,7 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
             self.assertEqual(
                 response.headers["X-Generative-Editable-Fallback-Policy"], "raster_pptx"
             )
-            self.assertEqual(
-                response.headers["X-Generative-Editable-Fallback-Used"], "raster_pptx"
-            )
+            self.assertEqual(response.headers["X-Generative-Editable-Fallback-Used"], "raster_pptx")
             self.assertEqual(
                 [getattr(call[0], "__name__", "") for call in thread_calls],
                 ["_export_generative_editable_pptx"],
@@ -238,11 +236,11 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
 
             original_dependencies = export_route._build_generative_editable_pipeline_dependencies
             original_vlm_dependencies = export_route._build_vlm_editable_pipeline_dependencies
-            export_route._build_generative_editable_pipeline_dependencies = (
-                lambda: _fake_route_dependencies(validation_status="failed")
+            export_route._build_generative_editable_pipeline_dependencies = lambda: (
+                _fake_route_dependencies(validation_status="failed")
             )
-            export_route._build_vlm_editable_pipeline_dependencies = (
-                lambda config: _fake_vlm_route_dependencies(validation_status="failed")
+            export_route._build_vlm_editable_pipeline_dependencies = lambda config: (
+                _fake_vlm_route_dependencies(validation_status="failed")
             )
             try:
                 with self.assertRaisesRegex(RuntimeError, "validation failed"):
@@ -255,7 +253,9 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
                         ).editable_options,
                     )
             finally:
-                export_route._build_generative_editable_pipeline_dependencies = original_dependencies
+                export_route._build_generative_editable_pipeline_dependencies = (
+                    original_dependencies
+                )
                 export_route._build_vlm_editable_pipeline_dependencies = original_vlm_dependencies
 
             self.assertFalse(output_path.exists())
@@ -274,12 +274,6 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
             image_path = Path(tmp) / "slide.png"
             output_path = Path(tmp) / "out.pptx"
             Image.new("RGB", (800, 450), "white").save(image_path)
-            legacy_called = False
-
-            def fake_legacy_pipeline(**kwargs):
-                nonlocal legacy_called
-                legacy_called = True
-                Path(kwargs["output_path"]).write_bytes(b"legacy")
 
             provider = ProviderConfig(
                 role="stub",
@@ -302,9 +296,7 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
             )
 
             original_loader = export_route.load_generative_editable_config
-            original_legacy = export_route.run_generative_editable_pipeline
             export_route.load_generative_editable_config = lambda: non_vlm_config
-            export_route.run_generative_editable_pipeline = fake_legacy_pipeline
             try:
                 with self.assertRaisesRegex(
                     GenerativeEditableConfigError,
@@ -316,9 +308,7 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
                     )
             finally:
                 export_route.load_generative_editable_config = original_loader
-                export_route.run_generative_editable_pipeline = original_legacy
 
-        self.assertFalse(legacy_called)
         self.assertFalse(output_path.exists())
 
     def test_generative_export_accepts_explicit_raster_fallback_policy(self):
@@ -333,11 +323,11 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
             export_route._export_pptx = lambda image_paths, output_path, aspect_ratio="16:9": Path(
                 output_path
             ).write_bytes(b"raster-fallback")
-            export_route._build_generative_editable_pipeline_dependencies = (
-                lambda: _fake_route_dependencies(validation_status="failed")
+            export_route._build_generative_editable_pipeline_dependencies = lambda: (
+                _fake_route_dependencies(validation_status="failed")
             )
-            export_route._build_vlm_editable_pipeline_dependencies = (
-                lambda config: _fake_vlm_route_dependencies(validation_status="failed")
+            export_route._build_vlm_editable_pipeline_dependencies = lambda config: (
+                _fake_vlm_route_dependencies(validation_status="failed")
             )
             try:
                 export_route._export_generative_editable_pptx(
@@ -349,7 +339,9 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
                 )
             finally:
                 export_route._export_pptx = original_export_pptx
-                export_route._build_generative_editable_pipeline_dependencies = original_dependencies
+                export_route._build_generative_editable_pipeline_dependencies = (
+                    original_dependencies
+                )
                 export_route._build_vlm_editable_pipeline_dependencies = original_vlm_dependencies
 
             self.assertEqual(output_path.read_bytes(), b"raster-fallback")
@@ -372,11 +364,11 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
             original_dependencies = export_route._build_generative_editable_pipeline_dependencies
             original_vlm_dependencies = export_route._build_vlm_editable_pipeline_dependencies
             export_route._export_pptx = fake_export_pptx
-            export_route._build_generative_editable_pipeline_dependencies = (
-                lambda: _fake_route_dependencies(validation_status="failed")
+            export_route._build_generative_editable_pipeline_dependencies = lambda: (
+                _fake_route_dependencies(validation_status="failed")
             )
-            export_route._build_vlm_editable_pipeline_dependencies = (
-                lambda config: _fake_vlm_route_dependencies(validation_status="failed")
+            export_route._build_vlm_editable_pipeline_dependencies = lambda config: (
+                _fake_vlm_route_dependencies(validation_status="failed")
             )
             try:
                 export_route._export_generative_editable_pptx(
@@ -391,7 +383,9 @@ class GenerativeEditableExportContractTest(unittest.TestCase):
                 )
             finally:
                 export_route._export_pptx = original_export_pptx
-                export_route._build_generative_editable_pipeline_dependencies = original_dependencies
+                export_route._build_generative_editable_pipeline_dependencies = (
+                    original_dependencies
+                )
                 export_route._build_vlm_editable_pipeline_dependencies = original_vlm_dependencies
 
             self.assertEqual(captured["image_paths"], [str(second), str(first)])

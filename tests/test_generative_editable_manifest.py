@@ -288,7 +288,10 @@ class GenerativeEditableManifestTest(unittest.TestCase):
         self.assertEqual(loaded.repair_attempts[0].provenance["prompt_id"], "repair_asset")
         self.assertEqual(loaded.text_clean_background, "backgrounds/slide-a.text-clean.png")
         self.assertEqual(loaded.base_clean_background, "backgrounds/slide-a.base-clean.png")
-        self.assertEqual(loaded.provider_output_paths["repair"], "provider_outputs/repair/0000-slide-a/repair.json")
+        self.assertEqual(
+            loaded.provider_output_paths["repair"],
+            "provider_outputs/repair/0000-slide-a/repair.json",
+        )
         self.assertEqual(loaded.provenance["input_hash"], "abc123")
         self.assertEqual(loaded.validation_status, "passed")
 
@@ -313,7 +316,9 @@ class GenerativeEditableManifestTest(unittest.TestCase):
         self.assertEqual(loaded.provider_roles["generation"], "image_model")
         self.assertEqual(loaded.page_manifest_paths, ["pages/0000-slide-a.json"])
         self.assertEqual(loaded.validation_status, "failed")
-        self.assertEqual(loaded.provenance["validation_error"], "preview similarity below threshold")
+        self.assertEqual(
+            loaded.provenance["validation_error"], "preview similarity below threshold"
+        )
 
         with self.assertRaisesRegex(ValueError, "validation_status"):
             PageManifest(

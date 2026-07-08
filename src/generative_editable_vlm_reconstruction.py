@@ -25,7 +25,10 @@ from PIL import Image, ImageChops, ImageDraw, ImageStat
 
 from .generative_editable_config import ProviderConfig
 from .generative_editable_assets import build_asset_sheet_request, slice_asset_sheet_by_components
-from .generative_editable_backgrounds import BackgroundResult, create_source_preserving_text_background
+from .generative_editable_backgrounds import (
+    BackgroundResult,
+    create_source_preserving_text_background,
+)
 from .generative_editable_composer import compose_deck_from_manifests
 from .generative_editable_foreground_planner import ForegroundCandidate
 from .generative_editable_job_artifacts import GenerativeEditableJobArtifacts
@@ -247,7 +250,9 @@ class OpenAIChatVLMPageAnalysisProvider(VLMPageAnalysisProvider):
                 return analysis
             except ProviderError as exc:
                 compatibility_error = _is_vlm_payload_shape_compatibility_error(exc)
-                retrying = bool(attempt_index < len(payloads) and (exc.retryable or compatibility_error))
+                retrying = bool(
+                    attempt_index < len(payloads) and (exc.retryable or compatibility_error)
+                )
                 self.last_payload_attempts.append(
                     _provider_attempt_error_payload(
                         exc,
@@ -293,8 +298,8 @@ class OpenAIChatVLMPageAnalysisProvider(VLMPageAnalysisProvider):
                 operation="vlm_page_analysis",
                 message="VLM provider response JSON must be an object",
                 retryable=False,
-            secret_values=[self.config.api_key, self.config.base_url],
-        )
+                secret_values=[self.config.api_key, self.config.base_url],
+            )
         return coerce_vlm_analysis(parsed)
 
 
@@ -351,7 +356,9 @@ class FakeVLMPageAnalysisProvider(VLMPageAnalysisProvider):
 def _default_vlm_preview_validator(**kwargs) -> ValidationReport:
     if kwargs.get("require_preview_validation") is False:
         return ValidationReport(status="passed", checked_pages=1, issues=[])
-    gates = quality_threshold_to_preview_gates(float(kwargs.get("preview_similarity_threshold", 0.92)))
+    gates = quality_threshold_to_preview_gates(
+        float(kwargs.get("preview_similarity_threshold", 0.92))
+    )
     return validate_preview_similarity(
         source_image_path=kwargs["source_image_path"],
         preview=kwargs["preview"],
@@ -485,7 +492,7 @@ def _validate_vlm_pipeline_output(
             deck_manifest_path=deck_manifest_path,
             artifact_root=artifact_root,
             pptx_path=pptx_path,
-        )
+        ),
     ]
     for page in page_manifests:
         preview = _render_vlm_preview(
@@ -509,7 +516,9 @@ def _validate_vlm_pipeline_output(
     return _merge_validation_reports(reports, checked_pages=len(page_manifests))
 
 
-def _validate_vlm_source_preserved_bitmap_coverage(page_manifests: list[PageManifest]) -> ValidationReport:
+def _validate_vlm_source_preserved_bitmap_coverage(
+    page_manifests: list[PageManifest],
+) -> ValidationReport:
     issues: list[ValidationIssue] = []
     for page in page_manifests:
         issues.extend(_vlm_source_preserved_bitmap_coverage_issues(page))
@@ -609,11 +618,15 @@ def _vlm_source_preserved_bitmap_coverage_issues(page: PageManifest) -> list[Val
 
 
 def _is_vlm_source_preserved_bitmap_asset(asset: BitmapAssetSpec) -> bool:
-    return asset.provenance.get("asset_strategy") in {
-        "masked_source_element",
-        "source_preserved_crop",
-        "source_preserving_anchor",
-    } or asset.provenance.get("source_type") == "vlm_source_crop"
+    return (
+        asset.provenance.get("asset_strategy")
+        in {
+            "masked_source_element",
+            "source_preserved_crop",
+            "source_preserving_anchor",
+        }
+        or asset.provenance.get("source_type") == "vlm_source_crop"
+    )
 
 
 def _vlm_source_preserved_asset_effective_area_ratio(
@@ -638,14 +651,10 @@ def _has_vlm_split_bitmap_structure(
     structure_count: int,
 ) -> bool:
     split_row_structure = (
-        len(source_preserved_assets) >= 3
-        and largest_ratio <= 0.35
-        and structure_count >= 3
+        len(source_preserved_assets) >= 3 and largest_ratio <= 0.35 and structure_count >= 3
     )
     dense_infographic_structure = (
-        len(source_preserved_assets) >= 3
-        and largest_ratio <= 0.60
-        and structure_count >= 12
+        len(source_preserved_assets) >= 3 and largest_ratio <= 0.60 and structure_count >= 12
     )
     return split_row_structure or dense_infographic_structure
 
@@ -668,7 +677,9 @@ def _combined_bbox_coverage_ratio(
     return covered / float(width * height)
 
 
-def _validate_vlm_minimum_editable_structure(page_manifests: list[PageManifest]) -> ValidationReport:
+def _validate_vlm_minimum_editable_structure(
+    page_manifests: list[PageManifest],
+) -> ValidationReport:
     issues: list[ValidationIssue] = []
     for page in page_manifests:
         editable_count = len(page.text_boxes) + len(page.native_shapes) + len(page.bitmap_assets)
@@ -697,8 +708,7 @@ def _validate_vlm_minimum_editable_structure(page_manifests: list[PageManifest])
 
 def _clean_background_local_fallback_used(page_manifests: list[PageManifest]) -> bool:
     return any(
-        bool(page.provenance.get("clean_background_provider_failed"))
-        for page in page_manifests
+        bool(page.provenance.get("clean_background_provider_failed")) for page in page_manifests
     )
 
 
@@ -727,7 +737,9 @@ class _VLMPageDeadline:
         if self.timeout_seconds <= 0:
             return
         if time.monotonic() - self.started_at >= self.timeout_seconds:
-            raise self.timeout_error(f"VLM-first page exceeded {self.timeout_seconds}s during {stage}")
+            raise self.timeout_error(
+                f"VLM-first page exceeded {self.timeout_seconds}s during {stage}"
+            )
 
     def provider_timeout(self, configured_timeout_seconds: int | float, stage: str) -> float:
         self.check(stage)
@@ -735,7 +747,9 @@ class _VLMPageDeadline:
             return configured_timeout_seconds
         remaining = self.timeout_seconds - (time.monotonic() - self.started_at)
         if remaining <= 0:
-            raise self.timeout_error(f"VLM-first page exceeded {self.timeout_seconds}s before {stage}")
+            raise self.timeout_error(
+                f"VLM-first page exceeded {self.timeout_seconds}s before {stage}"
+            )
         return max(0.001, min(float(configured_timeout_seconds), remaining))
 
     def timeout_error(self, message: str) -> ProviderTimeoutError:
@@ -783,7 +797,9 @@ def _raise_page_timeout_if_page_limited_provider_timeout(
         ) from provider_error
 
 
-def _render_vlm_preview(preview_renderer, page: PageManifest, artifact_root: Path, *, pptx_path: str):
+def _render_vlm_preview(
+    preview_renderer, page: PageManifest, artifact_root: Path, *, pptx_path: str
+):
     if "pptx_path" in inspect.signature(preview_renderer).parameters:
         return preview_renderer(page, artifact_root, pptx_path=pptx_path)
     return preview_renderer(page, artifact_root)
@@ -810,13 +826,19 @@ def _record_vlm_validation_status(
     page_manifest_refs: list[str],
     validation_report: ValidationReport,
 ) -> None:
-    status = "failed" if validation_report.status != "passed" or validation_report.issues else "passed"
+    status = (
+        "failed" if validation_report.status != "passed" or validation_report.issues else "passed"
+    )
     issue_slide_ids = {issue.slide_id for issue in validation_report.issues if issue.slide_id}
     rewritten_refs: list[str] = []
     for page_ref in page_manifest_refs:
         page_path = artifacts.job_dir / page_ref
         page = read_page_manifest(page_path)
-        page_status = "failed" if status == "failed" and (not issue_slide_ids or page.slide_id in issue_slide_ids) else "passed"
+        page_status = (
+            "failed"
+            if status == "failed" and (not issue_slide_ids or page.slide_id in issue_slide_ids)
+            else "passed"
+        )
         write_manifest(page_path, replace(page, validation_status=page_status))
         rewritten_refs.append(page_ref)
     write_manifest(
@@ -865,7 +887,9 @@ def with_vlm_provider_retries(
         dependencies,
         vlm_provider=vlm_provider,
         image_edit_provider=retry_image_edit(dependencies.image_edit_provider),
-        asset_sheet_image_edit_provider=retry_image_edit(dependencies.asset_sheet_image_edit_provider),
+        asset_sheet_image_edit_provider=retry_image_edit(
+            dependencies.asset_sheet_image_edit_provider
+        ),
         ocr_provider=ocr_provider,
     )
 
@@ -953,8 +977,7 @@ def _build_vlm_page_manifest(
         source_image_size=source_image_size,
     )
     protected_text_bboxes = [
-        text_box.source_pixel_bbox
-        for text_box in (text_result.text_boxes if text_result else [])
+        text_box.source_pixel_bbox for text_box in (text_result.text_boxes if text_result else [])
     ]
     page_deadline.check("vlm_build_mask")
     with _record_vlm_stage(artifacts, "vlm_build_mask", page_index=page_index, slide_id=slide_id):
@@ -983,7 +1006,9 @@ def _build_vlm_page_manifest(
         clean_background = _create_vlm_clean_background(
             source_image_path=source_path,
             mask_path=mask_path,
-            output_asset_path=artifacts.asset_path(slide_id, page_index, "backgrounds", "vlm-clean.png"),
+            output_asset_path=artifacts.asset_path(
+                slide_id, page_index, "backgrounds", "vlm-clean.png"
+            ),
             asset_root=artifacts.job_dir,
             edit_provider=dependencies.image_edit_provider,
             timeout_seconds=clean_timeout,
@@ -994,7 +1019,9 @@ def _build_vlm_page_manifest(
             ),
         )
         page_deadline.check("vlm_clean_background")
-    asset_sheet_provider = dependencies.asset_sheet_image_edit_provider or dependencies.image_edit_provider
+    asset_sheet_provider = (
+        dependencies.asset_sheet_image_edit_provider or dependencies.image_edit_provider
+    )
     asset_sheet_timeout_seconds = page_deadline.provider_timeout(
         _asset_sheet_timeout_seconds(dependencies.provider_timeout_seconds),
         "vlm_asset_sheet",
@@ -1054,7 +1081,9 @@ def _build_vlm_page_manifest(
                 "issues": text_result.issues if text_result else [],
             },
         )
-    with _record_vlm_stage(artifacts, "vlm_build_manifest", page_index=page_index, slide_id=slide_id):
+    with _record_vlm_stage(
+        artifacts, "vlm_build_manifest", page_index=page_index, slide_id=slide_id
+    ):
         page = build_page_manifest_from_vlm_analysis(
             analysis=analysis,
             slide_id=slide_id,
@@ -1072,7 +1101,9 @@ def _build_vlm_page_manifest(
             provenance={
                 **page.provenance,
                 "clean_background_strategy": clean_background.strategy,
-                "clean_background_provider_failed": bool(clean_background.provenance.get("provider_failed")),
+                "clean_background_provider_failed": bool(
+                    clean_background.provenance.get("provider_failed")
+                ),
                 "text_mask_path": _job_relative(mask_path, artifacts.job_dir),
             },
         )
@@ -1081,7 +1112,9 @@ def _build_vlm_page_manifest(
         "image_edit": _job_relative(image_edit_output_path, artifacts.job_dir),
     }
     if asset_sheet_output_path is not None:
-        provider_output_paths["asset_sheet"] = _job_relative(asset_sheet_output_path, artifacts.job_dir)
+        provider_output_paths["asset_sheet"] = _job_relative(
+            asset_sheet_output_path, artifacts.job_dir
+        )
     if ocr_output_path is not None:
         provider_output_paths["ocr"] = _job_relative(ocr_output_path, artifacts.job_dir)
     return replace(
@@ -1277,13 +1310,9 @@ def _protected_mask_bboxes(
     *,
     additional_text_bboxes: list[PixelBBox] | None = None,
 ) -> list[PixelBBox]:
-    protected = [
-        mapper.to_source_bbox(region.bbox, padding=0)
-        for region in analysis.text_regions
-    ]
+    protected = [mapper.to_source_bbox(region.bbox, padding=0) for region in analysis.text_regions]
     protected.extend(
-        mapper.to_source_bbox(region.bbox, padding=0)
-        for region in analysis.shape_regions
+        mapper.to_source_bbox(region.bbox, padding=0) for region in analysis.shape_regions
     )
     protected.extend(additional_text_bboxes or [])
     return protected
@@ -1359,8 +1388,7 @@ def build_page_manifest_from_vlm_analysis(
             )
         )
         vlm_text_boxes = [
-            _text_box_from_vlm(region, mapper, source_rgb)
-            for region in analysis.text_regions
+            _text_box_from_vlm(region, mapper, source_rgb) for region in analysis.text_regions
         ]
         resolved_text_boxes = _resolve_text_boxes_with_vlm_gate(
             analysis=analysis,
@@ -1448,11 +1476,7 @@ def _resolve_text_boxes_with_vlm_gate(
             for index, box in enumerate(ocr_text_boxes)
             if index not in used_indexes
         ]
-        matches = [
-            (index, box, score)
-            for index, box, score in candidates
-            if score >= 0.35
-        ]
+        matches = [(index, box, score) for index, box, score in candidates if score >= 0.35]
         if not matches:
             if region_index < len(vlm_text_boxes):
                 vlm_box = vlm_text_boxes[region_index]
@@ -1521,7 +1545,9 @@ def _vlm_fallback_is_already_represented(
         if _normalize_text_for_match(existing.text) != normalized:
             continue
         overlap = _bbox_intersection_area(vlm_box.source_pixel_bbox, existing.source_pixel_bbox)
-        smaller_area = min(_bbox_area(vlm_box.source_pixel_bbox), _bbox_area(existing.source_pixel_bbox))
+        smaller_area = min(
+            _bbox_area(vlm_box.source_pixel_bbox), _bbox_area(existing.source_pixel_bbox)
+        )
         if overlap / max(1, smaller_area) >= 0.45:
             return True
         if _text_boxes_are_nearby_ocr_vlm_duplicates(existing, vlm_box):
@@ -1548,7 +1574,10 @@ def _ocr_only_text_fallback_is_sane(
     if len(boxes) > 40:
         return False
     normalized_lengths = [len(_normalize_text_for_match(box.text)) for box in boxes]
-    if len(boxes) > 20 and sum(1 for length in normalized_lengths if length <= 1) / len(boxes) >= 0.65:
+    if (
+        len(boxes) > 20
+        and sum(1 for length in normalized_lengths if length <= 1) / len(boxes) >= 0.65
+    ):
         return False
     page_area = max(1, int(source_image_size[0]) * int(source_image_size[1]))
     combined_bbox_ratio = _combined_bbox_coverage_ratio(
@@ -1592,7 +1621,9 @@ def _bitmap_asset_is_major_visual(asset: BitmapAssetSpec) -> bool:
 def _text_box_is_inside_or_near_bitmap(text_bbox: PixelBBox, asset_bbox: PixelBBox) -> bool:
     text_center_y = (text_bbox[1] + text_bbox[3]) / 2.0
     asset_height = max(1, asset_bbox[3] - asset_bbox[1])
-    if not (asset_bbox[1] - asset_height * 0.10 <= text_center_y <= asset_bbox[3] + asset_height * 0.10):
+    if not (
+        asset_bbox[1] - asset_height * 0.10 <= text_center_y <= asset_bbox[3] + asset_height * 0.10
+    ):
         return False
     horizontal_overlap = min(text_bbox[2], asset_bbox[2]) - max(text_bbox[0], asset_bbox[0])
     if horizontal_overlap > 0:
@@ -1706,15 +1737,14 @@ def _should_keep_medium_confidence_vlm_text_over_fragmentary_ocr(
 def _merged_ocr_text_box_for_guard(ocr_boxes: list[TextBoxSpec]) -> TextBoxSpec:
     if not ocr_boxes:
         raise ValueError("ocr_boxes are required")
-    ordered = sorted(ocr_boxes, key=lambda box: (box.source_pixel_bbox[1], box.source_pixel_bbox[0]))
+    ordered = sorted(
+        ocr_boxes, key=lambda box: (box.source_pixel_bbox[1], box.source_pixel_bbox[0])
+    )
     left = min(box.source_pixel_bbox[0] for box in ordered)
     top = min(box.source_pixel_bbox[1] for box in ordered)
     right = max(box.source_pixel_bbox[2] for box in ordered)
     bottom = max(box.source_pixel_bbox[3] for box in ordered)
-    confidences = [
-        float(box.provenance.get("ocr_confidence", 0.0) or 0.0)
-        for box in ordered
-    ]
+    confidences = [float(box.provenance.get("ocr_confidence", 0.0) or 0.0) for box in ordered]
     provenance = dict(ordered[0].provenance)
     provenance["ocr_confidence"] = max(confidences) if confidences else 0.0
     provenance["merged_ocr_fragment_count"] = len(ordered)
@@ -1755,7 +1785,9 @@ def _is_short_text(text: str) -> bool:
 def _should_keep_ocr_layout_for_exact_text(ocr_box: TextBoxSpec, vlm_box: TextBoxSpec) -> bool:
     if not _normalized_texts_are_exact_duplicate(ocr_box.text, vlm_box.text):
         return False
-    vertical_center_close = _vertical_center_distance(ocr_box.source_pixel_bbox, vlm_box.source_pixel_bbox) <= max(
+    vertical_center_close = _vertical_center_distance(
+        ocr_box.source_pixel_bbox, vlm_box.source_pixel_bbox
+    ) <= max(
         ocr_box.source_pixel_bbox[3] - ocr_box.source_pixel_bbox[1],
         vlm_box.source_pixel_bbox[3] - vlm_box.source_pixel_bbox[1],
     )
@@ -1770,7 +1802,8 @@ def _should_keep_ocr_layout_for_exact_text(ocr_box: TextBoxSpec, vlm_box: TextBo
     if (
         vertical_center_close
         and len(_normalize_text_for_match(ocr_box.text)) >= 8
-        and ocr_box.source_pixel_bbox[0] <= vlm_box.source_pixel_bbox[0] - max(24, int(vlm_width * 0.05))
+        and ocr_box.source_pixel_bbox[0]
+        <= vlm_box.source_pixel_bbox[0] - max(24, int(vlm_width * 0.05))
         and ocr_width >= vlm_width * 0.90
     ):
         return True
@@ -1862,10 +1895,7 @@ def _text_boxes_are_overlapping_duplicates(left: TextBoxSpec, right: TextBoxSpec
         return False
     smaller_area = min(_bbox_area(left.source_pixel_bbox), _bbox_area(right.source_pixel_bbox))
     larger_area = max(_bbox_area(left.source_pixel_bbox), _bbox_area(right.source_pixel_bbox))
-    return (
-        overlap / max(1, smaller_area) >= 0.70
-        and overlap / max(1, larger_area) >= 0.45
-    )
+    return overlap / max(1, smaller_area) >= 0.70 and overlap / max(1, larger_area) >= 0.45
 
 
 def _normalized_texts_are_exact_duplicate(left: str, right: str) -> bool:
@@ -1933,7 +1963,9 @@ def _foreground_rgba_crop(
     return source_crop
 
 
-def _clear_crop_regions(crop: Image.Image, crop_bbox: PixelBBox, transparent_bboxes: list[PixelBBox]) -> None:
+def _clear_crop_regions(
+    crop: Image.Image, crop_bbox: PixelBBox, transparent_bboxes: list[PixelBBox]
+) -> None:
     if not transparent_bboxes:
         return
     pixels = crop.load()
@@ -1951,7 +1983,9 @@ def _clear_crop_regions(crop: Image.Image, crop_bbox: PixelBBox, transparent_bbo
                 pixels[x, y] = (pixel[0], pixel[1], pixel[2], 0)
 
 
-def _pixel_matches_background(source_pixel: tuple[int, ...], background_pixel: tuple[int, ...], tolerance: int) -> bool:
+def _pixel_matches_background(
+    source_pixel: tuple[int, ...], background_pixel: tuple[int, ...], tolerance: int
+) -> bool:
     delta = (
         abs(source_pixel[0] - background_pixel[0])
         + abs(source_pixel[1] - background_pixel[1])
@@ -1974,15 +2008,16 @@ def _create_vlm_asset_sheet_assets(
     force_opaque_source_crops: bool = False,
 ) -> tuple[list[BitmapAssetSpec], list[AssetSheetSpec], Path | None]:
     text_bboxes = [
-        mapper.to_source_bbox(region.bbox, padding=8)
-        for region in analysis.text_regions
+        mapper.to_source_bbox(region.bbox, padding=8) for region in analysis.text_regions
     ]
     text_bboxes.extend(_pad_bbox(bbox, 8) for bbox in additional_text_bboxes or [])
     candidates = _foreground_candidates_from_vlm_bitmap_regions(analysis, mapper)
     candidates = _refine_candidates_with_clean_background_difference(
         candidates=candidates,
         source_image_path=source_image_path,
-        clean_background_path=artifacts.asset_path(slide_id, page_index, "backgrounds", "vlm-clean.png"),
+        clean_background_path=artifacts.asset_path(
+            slide_id, page_index, "backgrounds", "vlm-clean.png"
+        ),
     )
     candidates = _bridge_narrow_same_group_complex_candidates(candidates)
     if not candidates:
@@ -1996,7 +2031,9 @@ def _create_vlm_asset_sheet_assets(
     source_preserved_assets = _source_preserved_bitmap_assets_from_candidates(
         candidates=source_preserved_candidates,
         source_image_path=source_image_path,
-        clean_background_path=artifacts.asset_path(slide_id, page_index, "backgrounds", "vlm-clean.png"),
+        clean_background_path=artifacts.asset_path(
+            slide_id, page_index, "backgrounds", "vlm-clean.png"
+        ),
         artifact_root=artifacts.job_dir,
         slide_id=slide_id,
         page_index=page_index,
@@ -2021,7 +2058,9 @@ def _create_vlm_asset_sheet_assets(
         assets = _source_preserved_bitmap_assets_from_candidates(
             candidates=asset_sheet_candidates,
             source_image_path=source_image_path,
-            clean_background_path=artifacts.asset_path(slide_id, page_index, "backgrounds", "vlm-clean.png"),
+            clean_background_path=artifacts.asset_path(
+                slide_id, page_index, "backgrounds", "vlm-clean.png"
+            ),
             artifact_root=artifacts.job_dir,
             slide_id=slide_id,
             page_index=page_index,
@@ -2057,7 +2096,9 @@ def _create_vlm_asset_sheet_assets(
         assets = _source_preserved_bitmap_assets_from_candidates(
             candidates=asset_sheet_candidates,
             source_image_path=source_image_path,
-            clean_background_path=artifacts.asset_path(slide_id, page_index, "backgrounds", "vlm-clean.png"),
+            clean_background_path=artifacts.asset_path(
+                slide_id, page_index, "backgrounds", "vlm-clean.png"
+            ),
             artifact_root=artifacts.job_dir,
             slide_id=slide_id,
             page_index=page_index,
@@ -2076,7 +2117,12 @@ def _create_vlm_asset_sheet_assets(
                 "error_type": type(exc).__name__,
                 "error": str(exc),
                 "sheet_path": _artifact_ref(Path(result.output_asset_path), artifacts.job_dir),
-                "bitmap_assets": [asdict(asset) for asset in _with_candidate_z_order(source_preserved_assets + assets, candidates)],
+                "bitmap_assets": [
+                    asdict(asset)
+                    for asset in _with_candidate_z_order(
+                        source_preserved_assets + assets, candidates
+                    )
+                ],
                 "candidate_ids": [candidate.candidate_id for candidate in asset_sheet_candidates],
                 "provider_role": result.provider_role,
                 "provider_name": result.provider_name,
@@ -2089,7 +2135,9 @@ def _create_vlm_asset_sheet_assets(
     assets = _select_source_faithful_bitmap_assets(
         generated_assets=assets,
         source_image_path=source_image_path,
-        clean_background_path=artifacts.asset_path(slide_id, page_index, "backgrounds", "vlm-clean.png"),
+        clean_background_path=artifacts.asset_path(
+            slide_id, page_index, "backgrounds", "vlm-clean.png"
+        ),
         artifact_root=artifacts.job_dir,
         slide_id=slide_id,
         page_index=page_index,
@@ -2129,7 +2177,9 @@ def _create_vlm_asset_sheet_assets(
 
 
 def _candidate_should_use_asset_sheet(candidate: ForegroundCandidate) -> bool:
-    return candidate.classification == "bitmap_asset_candidate" and not _candidate_is_vlm_icon(candidate)
+    return candidate.classification == "bitmap_asset_candidate" and not _candidate_is_vlm_icon(
+        candidate
+    )
 
 
 def _candidate_is_vlm_icon(candidate: ForegroundCandidate) -> bool:
@@ -2198,18 +2248,27 @@ def _source_preserved_bitmap_assets_from_candidates(
     output_dir = root / "assets" / f"{page_index:04d}-{_safe_name(slide_id)}"
     output_dir.mkdir(parents=True, exist_ok=True)
     assets: list[BitmapAssetSpec] = []
-    with Image.open(source_image_path) as source_image, Image.open(clean_background_path) as background_image:
+    with (
+        Image.open(source_image_path) as source_image,
+        Image.open(clean_background_path) as background_image,
+    ):
         source_rgb = source_image.convert("RGB")
         background_rgb = background_image.convert("RGB").resize(source_rgb.size)
         for index, candidate in enumerate(candidates, start=1):
             candidate_skipped_reason = asset_sheet_skipped_reason
-            if not candidate_skipped_reason and not asset_sheet_provider_failed and not asset_sheet_slicing_failed:
+            if (
+                not candidate_skipped_reason
+                and not asset_sheet_provider_failed
+                and not asset_sheet_slicing_failed
+            ):
                 candidate_skipped_reason = _source_preserved_skip_reason_for_candidate(candidate)
             bbox = _clamp_bbox(
                 _pad_bbox(candidate.source_pixel_bbox, fallback_padding),
                 source_rgb.size,
             )
-            use_opaque_crop = force_opaque_source_crops or candidate.classification == "complex_whole_visual"
+            use_opaque_crop = (
+                force_opaque_source_crops or candidate.classification == "complex_whole_visual"
+            )
             if use_opaque_crop:
                 crop = source_rgb.crop(bbox).convert("RGBA")
                 _clear_crop_regions(crop, bbox, transparent_bboxes or [])
@@ -2299,7 +2358,9 @@ def _select_source_faithful_bitmap_assets(
                 asset.source_pixel_bbox,
                 transparent_bboxes=transparent_bboxes or [],
             )
-            source_score = _asset_reconstruction_delta(source_crop, source_rgb, background_rgb, asset.source_pixel_bbox)
+            source_score = _asset_reconstruction_delta(
+                source_crop, source_rgb, background_rgb, asset.source_pixel_bbox
+            )
             with Image.open(generated_path) as generated_image:
                 generated_rgba = generated_image.convert("RGBA")
             generated_score = _asset_reconstruction_delta(
@@ -2415,7 +2476,10 @@ def _refine_candidates_with_clean_background_difference(
     if not candidates:
         return []
     refined: list[ForegroundCandidate] = []
-    with Image.open(source_image_path) as source_image, Image.open(clean_background_path) as background_image:
+    with (
+        Image.open(source_image_path) as source_image,
+        Image.open(clean_background_path) as background_image,
+    ):
         source_rgb = source_image.convert("RGB")
         background_rgb = background_image.convert("RGB").resize(source_rgb.size)
         image_size = source_rgb.size
@@ -2491,7 +2555,9 @@ def _bridge_narrow_same_group_complex_candidates(
             continue
         if gap > neighbor_width * max_gap_ratio:
             continue
-        bridge_overlap = max(16, min(48, round(max(current_height, neighbor_bbox[3] - neighbor_bbox[1]) * 0.15)))
+        bridge_overlap = max(
+            16, min(48, round(max(current_height, neighbor_bbox[3] - neighbor_bbox[1]) * 0.15))
+        )
         bridged_left = max(neighbor_bbox[2] - bridge_overlap, 0)
         if bridged_left >= current_bbox[0]:
             continue
@@ -2730,7 +2796,11 @@ def _native_shapes_from_vlm(
                 line_end=end,
                 stroke_width=1.0,
                 opacity=0.75,
-                provenance={"provider_role": "VLM", "region_id": region.region_id, "vlm_type": kind},
+                provenance={
+                    "provider_role": "VLM",
+                    "region_id": region.region_id,
+                    "vlm_type": kind,
+                },
             )
         ]
     if kind in {"rounded_rect", "rounded_rectangle", "rect", "rectangle"}:
@@ -2745,7 +2815,11 @@ def _native_shapes_from_vlm(
                 stroke_width=1.0,
                 opacity=0.95,
                 radius=0.12,
-                provenance={"provider_role": "VLM", "region_id": region.region_id, "vlm_type": kind},
+                provenance={
+                    "provider_role": "VLM",
+                    "region_id": region.region_id,
+                    "vlm_type": kind,
+                },
             )
         ]
     return []
@@ -2829,10 +2903,10 @@ def _vlm_compact_analysis_prompt(size: tuple[int, int]) -> str:
         "[left,top,right,bottom]，不要归一化。\n"
         "目标是给后续 PPTX 重建提供元素清单，而不是描述图片。\n"
         "输出 schema: {"
-        "\"coordinate_space\":{\"width\":%d,\"height\":%d,\"unit\":\"px\"},"
-        "\"text_regions\":[{\"id\":\"t1\",\"text\":\"原文\",\"bbox\":[0,0,1,1],\"role\":\"title|heading|body|label|button\",\"color\":\"#RRGGBB\",\"confidence\":0.9,\"group_id\":\"g1\"}],"
-        "\"bitmap_regions\":[{\"id\":\"b1\",\"type\":\"photo|icon|logo|qr|product|component|other\",\"bbox\":[0,0,1,1],\"importance\":\"major|minor\",\"group_id\":\"g1\"}],"
-        "\"shape_regions\":[{\"id\":\"s1\",\"type\":\"rounded_rect|rect|line|divider|connector|arrow|circle|other\",\"bbox\":[0,0,1,1],\"importance\":\"major|minor\",\"group_id\":\"g1\"}]"
+        '"coordinate_space":{"width":%d,"height":%d,"unit":"px"},'
+        '"text_regions":[{"id":"t1","text":"原文","bbox":[0,0,1,1],"role":"title|heading|body|label|button","color":"#RRGGBB","confidence":0.9,"group_id":"g1"}],'
+        '"bitmap_regions":[{"id":"b1","type":"photo|icon|logo|qr|product|component|other","bbox":[0,0,1,1],"importance":"major|minor","group_id":"g1"}],'
+        '"shape_regions":[{"id":"s1","type":"rounded_rect|rect|line|divider|connector|arrow|circle|other","bbox":[0,0,1,1],"importance":"major|minor","group_id":"g1"}]'
         "}。\n"
         "规则：文字逐项列出，中文照抄，不合并跨区域文字；大背景不要放入 bitmap_regions；"
         "面板、分割线、按钮边框放 shape_regions；忽略纯装饰噪声。"
@@ -2920,7 +2994,12 @@ def _ocr_match_score(region: VLMTextRegion, region_bbox: PixelBBox, box: TextBox
     confidence = float(box.provenance.get("ocr_confidence", 0.0) or 0.0)
     if text_score < 0.2 and region.text:
         return 0.0
-    return max(overlap, 0.35 if _bbox_center_inside(box.source_pixel_bbox, region_bbox) else 0.0) * 0.65 + text_score * 0.25 + confidence * 0.1
+    return (
+        max(overlap, 0.35 if _bbox_center_inside(box.source_pixel_bbox, region_bbox) else 0.0)
+        * 0.65
+        + text_score * 0.25
+        + confidence * 0.1
+    )
 
 
 def _bbox_overlap_ratio(outer: PixelBBox, inner: PixelBBox) -> float:
@@ -3006,9 +3085,7 @@ def _cap_font_size_by_text_width(
     text: str,
 ) -> float:
     line_units = [
-        _estimate_text_line_units(line)
-        for line in str(text).splitlines()
-        if line.strip()
+        _estimate_text_line_units(line) for line in str(text).splitlines() if line.strip()
     ]
     if not line_units:
         return font_size
@@ -3048,11 +3125,7 @@ def _infer_text_color(image: Image.Image, bbox: PixelBBox) -> str:
     ]
     if not candidates:
         return "#FFFFFF"
-    blues = [
-        pixel
-        for pixel in candidates
-        if pixel[2] > pixel[0] + 25 and pixel[1] > pixel[0] - 20
-    ]
+    blues = [pixel for pixel in candidates if pixel[2] > pixel[0] + 25 and pixel[1] > pixel[0] - 20]
     values = blues if len(blues) >= max(3, len(candidates) * 0.2) else candidates
     rgb = tuple(sorted(pixel[index] for pixel in values)[len(values) // 2] for index in range(3))
     return f"#{rgb[0]:02X}{rgb[1]:02X}{rgb[2]:02X}"

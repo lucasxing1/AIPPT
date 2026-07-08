@@ -152,7 +152,9 @@ class GenerativeEditableSmokeScriptTest(unittest.TestCase):
                 [item["role"] for item in lines[1]["checked_providers"]],
                 ["clean_base_model", "asset_sheet_model", "repair_model"],
             )
-            self.assertEqual(checked_roles, ["clean_base_model", "asset_sheet_model", "repair_model"])
+            self.assertEqual(
+                checked_roles, ["clean_base_model", "asset_sheet_model", "repair_model"]
+            )
             for item in lines[1]["checked_providers"]:
                 self.assertTrue(Path(item["output_path"]).exists())
 

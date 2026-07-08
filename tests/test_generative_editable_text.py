@@ -114,7 +114,9 @@ class GenerativeEditableTextExtractionTest(unittest.TestCase):
 
         self.assertEqual([box.text for box in boxes], ["Metadata For Second", "OCR One"])
         self.assertEqual(boxes[0].source_pixel_bbox, (10, 60, 130, 90))
-        self.assertEqual([box.text for box in result.text_boxes], ["Metadata For Second", "OCR One"])
+        self.assertEqual(
+            [box.text for box in result.text_boxes], ["Metadata For Second", "OCR One"]
+        )
         self.assertNotIn("secret", repr(result.text_boxes[0].provenance))
         self.assertNotIn("style-secret", repr(result.text_boxes[0].style_hints))
 
@@ -310,7 +312,7 @@ class GenerativeEditableTextExtractionTest(unittest.TestCase):
                     bbox=(146, 294, 156, 302),
                     polygon=((146, 294), (156, 294), (156, 302), (146, 302)),
                     confidence=0.62,
-                )
+                ),
             ],
         )
         metadata = [{"text": "Quarterly Plan", "role": "title", "order": 1}]
@@ -608,7 +610,10 @@ class GenerativeEditableTextExtractionTest(unittest.TestCase):
         result = extract_text_with_validation([], ocr, min_confidence=0.75)
 
         self.assertEqual([box.text for box in result.text_boxes], ["优先平板拖运"])
-        self.assertEqual([issue["code"] for issue in result.issues], ["ignored_spurious_ocr", "ignored_spurious_ocr"])
+        self.assertEqual(
+            [issue["code"] for issue in result.issues],
+            ["ignored_spurious_ocr", "ignored_spurious_ocr"],
+        )
         self.assertEqual(result.validation_status, "passed")
 
     def test_text_validation_ignores_long_ocr_text_inside_tiny_bbox(self):

@@ -81,9 +81,17 @@ class GenerativeEditableConfigTest(unittest.TestCase):
                     "repair_model": "edit_model",
                     "generation_model": "image_model",
                 },
-                "ocr": {"model": "ocr_model", "use_aippt_metadata_first": True, "min_confidence": 0.81},
+                "ocr": {
+                    "model": "ocr_model",
+                    "use_aippt_metadata_first": True,
+                    "min_confidence": 0.81,
+                },
                 "quality": {"max_repair_attempts": 3, "preview_similarity_threshold": 0.9},
-                "retries": {"provider_max_attempts": 4, "repair_max_attempts": 2, "backoff_seconds": 0.5},
+                "retries": {
+                    "provider_max_attempts": 4,
+                    "repair_max_attempts": 2,
+                    "backoff_seconds": 0.5,
+                },
                 "timeouts": {"provider_call": 120, "page": 500},
             },
         }
@@ -262,7 +270,9 @@ class GenerativeEditableConfigTest(unittest.TestCase):
         ):
             load_generative_editable_config()
 
-        self.assertIn("generative editable provider role must be a non-empty string", str(ctx.exception))
+        self.assertIn(
+            "generative editable provider role must be a non-empty string", str(ctx.exception)
+        )
 
     def test_fake_provider_config_does_not_read_live_credentials(self):
         with patch("src.generative_editable_config.get_config") as get_config:

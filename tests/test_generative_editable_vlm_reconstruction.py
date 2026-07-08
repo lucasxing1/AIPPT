@@ -17,7 +17,9 @@ from src.generative_editable_providers import ProviderError
 class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
     def test_vlm_validation_fails_large_source_preserved_bitmap_coverage_without_runner(self):
         from src.generative_editable_manifest import BitmapAssetSpec, PageManifest
-        from src.generative_editable_vlm_reconstruction import _validate_vlm_source_preserved_bitmap_coverage
+        from src.generative_editable_vlm_reconstruction import (
+            _validate_vlm_source_preserved_bitmap_coverage,
+        )
 
         page = PageManifest(
             slide_id="slide-a",
@@ -42,8 +44,15 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual(report.issues[0].code, "oversized_bitmap_asset_coverage")
 
     def test_vlm_validation_allows_split_row_source_preserved_bitmap_structure(self):
-        from src.generative_editable_manifest import BitmapAssetSpec, NativeShapeSpec, PageManifest, TextBoxSpec
-        from src.generative_editable_vlm_reconstruction import _validate_vlm_source_preserved_bitmap_coverage
+        from src.generative_editable_manifest import (
+            BitmapAssetSpec,
+            NativeShapeSpec,
+            PageManifest,
+            TextBoxSpec,
+        )
+        from src.generative_editable_vlm_reconstruction import (
+            _validate_vlm_source_preserved_bitmap_coverage,
+        )
 
         page = PageManifest(
             slide_id="slide-a",
@@ -78,21 +87,30 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     source_pixel_bbox=(0, 0, 1000, 150),
                     asset_path="assets/row-a.png",
                     z_order=1,
-                    provenance={"asset_strategy": "source_preserved_crop", "alpha_visible_area_ratio": 0.12},
+                    provenance={
+                        "asset_strategy": "source_preserved_crop",
+                        "alpha_visible_area_ratio": 0.12,
+                    },
                 ),
                 BitmapAssetSpec(
                     asset_id="row-b",
                     source_pixel_bbox=(0, 170, 1000, 320),
                     asset_path="assets/row-b.png",
                     z_order=2,
-                    provenance={"asset_strategy": "source_preserved_crop", "alpha_visible_area_ratio": 0.12},
+                    provenance={
+                        "asset_strategy": "source_preserved_crop",
+                        "alpha_visible_area_ratio": 0.12,
+                    },
                 ),
                 BitmapAssetSpec(
                     asset_id="row-c",
                     source_pixel_bbox=(0, 340, 1000, 490),
                     asset_path="assets/row-c.png",
                     z_order=3,
-                    provenance={"asset_strategy": "source_preserved_crop", "alpha_visible_area_ratio": 0.12},
+                    provenance={
+                        "asset_strategy": "source_preserved_crop",
+                        "alpha_visible_area_ratio": 0.12,
+                    },
                 ),
             ],
         )
@@ -177,7 +195,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             )
 
         self.assertEqual(result.validation_report.status, "passed")
-        self.assertEqual([call[0] for call in calls], ["structure", "preview_renderer", "preview_validator"])
+        self.assertEqual(
+            [call[0] for call in calls], ["structure", "preview_renderer", "preview_validator"]
+        )
         self.assertEqual(calls[2][2], str(output))
         self.assertEqual(calls[2][3], 0.87)
         self.assertIs(calls[2][4], True)
@@ -1115,7 +1135,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
 
     def test_refines_vlm_bitmap_candidate_bbox_with_clean_background_difference(self):
         from src.generative_editable_foreground_planner import ForegroundCandidate
-        from src.generative_editable_vlm_reconstruction import _refine_candidates_with_clean_background_difference
+        from src.generative_editable_vlm_reconstruction import (
+            _refine_candidates_with_clean_background_difference,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1312,7 +1334,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             )
 
         self.assertEqual([box.text for box in page.text_boxes], ["第一行", "第二行"])
-        self.assertEqual([box.provenance["layout_source"] for box in page.text_boxes], ["ocr", "ocr"])
+        self.assertEqual(
+            [box.provenance["layout_source"] for box in page.text_boxes], ["ocr", "ocr"]
+        )
 
     def test_vlm_text_resolution_drops_overlapping_duplicate_text(self):
         from src.generative_editable_manifest import TextBoxSpec
@@ -1397,7 +1421,11 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 source_pixel_bbox=(85, 70, 298, 94),
                 source_pixel_polygon=((85, 70), (298, 70), (298, 94), (85, 94)),
                 font_size=18,
-                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+                provenance={
+                    "content_source": "ocr",
+                    "layout_source": "ocr",
+                    "ocr_confidence": 0.78,
+                },
             )
 
             page = build_page_manifest_from_vlm_analysis(
@@ -1411,7 +1439,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 text_boxes=[ocr_title],
             )
 
-        self.assertEqual([box.text for box in page.text_boxes], ["理想L9:", "旗舰增程SUV的技术实验"])
+        self.assertEqual(
+            [box.text for box in page.text_boxes], ["理想L9:", "旗舰增程SUV的技术实验"]
+        )
         self.assertEqual(page.text_boxes[0].provenance["content_source"], "ocr")
 
     def test_vlm_text_resolution_drops_nearby_duplicate_after_ocr_match(self):
@@ -1434,7 +1464,11 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     "coordinate_space": {"width": 1280, "height": 720, "unit": "px"},
                     "text_regions": [
                         {"id": "title-ocr-layout", "text": "理想L9:", "bbox": [85, 70, 296, 94]},
-                        {"id": "title-vlm-duplicate", "text": "理想L9:", "bbox": [67, 168, 433, 250]},
+                        {
+                            "id": "title-vlm-duplicate",
+                            "text": "理想L9:",
+                            "bbox": [67, 168, 433, 250],
+                        },
                         {
                             "id": "subtitle",
                             "text": "旗舰增程SUV的技术实验",
@@ -1450,7 +1484,11 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 source_pixel_bbox=(85, 70, 296, 94),
                 source_pixel_polygon=((85, 70), (296, 70), (296, 94), (85, 94)),
                 font_size=18,
-                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+                provenance={
+                    "content_source": "ocr",
+                    "layout_source": "ocr",
+                    "ocr_confidence": 0.78,
+                },
             )
 
             page = build_page_manifest_from_vlm_analysis(
@@ -1464,7 +1502,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 text_boxes=[ocr_title],
             )
 
-        self.assertEqual([box.text for box in page.text_boxes], ["理想L9:", "旗舰增程SUV的技术实验"])
+        self.assertEqual(
+            [box.text for box in page.text_boxes], ["理想L9:", "旗舰增程SUV的技术实验"]
+        )
         self.assertEqual(page.text_boxes[0].provenance["content_source"], "ocr")
 
     def test_vlm_text_resolution_keeps_real_adjacent_duplicate_text(self):
@@ -1836,7 +1876,11 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 source_pixel_bbox=(1280, 797, 1593, 867),
                 source_pixel_polygon=((1280, 797), (1593, 797), (1593, 867), (1280, 867)),
                 font_size=18,
-                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+                provenance={
+                    "content_source": "ocr",
+                    "layout_source": "ocr",
+                    "ocr_confidence": 0.78,
+                },
             )
 
             page = build_page_manifest_from_vlm_analysis(
@@ -1889,7 +1933,11 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 source_pixel_bbox=(50, 30, 70, 38),
                 source_pixel_polygon=((50, 30), (70, 30), (70, 38), (50, 38)),
                 font_size=8,
-                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+                provenance={
+                    "content_source": "ocr",
+                    "layout_source": "ocr",
+                    "ocr_confidence": 0.78,
+                },
             )
 
             page = build_page_manifest_from_vlm_analysis(
@@ -1942,7 +1990,11 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 source_pixel_bbox=(58, 42, 170, 68),
                 source_pixel_polygon=((58, 42), (170, 42), (170, 68), (58, 68)),
                 font_size=12,
-                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+                provenance={
+                    "content_source": "ocr",
+                    "layout_source": "ocr",
+                    "ocr_confidence": 0.78,
+                },
             )
 
             page = build_page_manifest_from_vlm_analysis(
@@ -1995,7 +2047,11 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 source_pixel_bbox=(100, 380, 380, 410),
                 source_pixel_polygon=((100, 380), (380, 380), (380, 410), (100, 410)),
                 font_size=18,
-                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+                provenance={
+                    "content_source": "ocr",
+                    "layout_source": "ocr",
+                    "ocr_confidence": 0.78,
+                },
             )
 
             page = build_page_manifest_from_vlm_analysis(
@@ -2012,7 +2068,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual([box.text for box in page.text_boxes], ["连接充电枪不可启动车辆"])
         self.assertEqual(page.text_boxes[0].provenance["provider_role"], "VLM")
 
-    def test_vlm_text_resolution_keeps_high_confidence_vlm_text_over_multiple_bad_ocr_fragments(self):
+    def test_vlm_text_resolution_keeps_high_confidence_vlm_text_over_multiple_bad_ocr_fragments(
+        self,
+    ):
         from src.generative_editable_manifest import TextBoxSpec
         from src.generative_editable_vlm_reconstruction import (
             build_page_manifest_from_vlm_analysis,
@@ -2049,14 +2107,22 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     source_pixel_bbox=(100, 380, 300, 397),
                     source_pixel_polygon=((100, 380), (300, 380), (300, 397), (100, 397)),
                     font_size=12,
-                    provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+                    provenance={
+                        "content_source": "ocr",
+                        "layout_source": "ocr",
+                        "ocr_confidence": 0.78,
+                    },
                 ),
                 TextBoxSpec(
                     text="车",
                     source_pixel_bbox=(306, 380, 420, 397),
                     source_pixel_polygon=((306, 380), (420, 380), (420, 397), (306, 397)),
                     font_size=12,
-                    provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.76},
+                    provenance={
+                        "content_source": "ocr",
+                        "layout_source": "ocr",
+                        "ocr_confidence": 0.76,
+                    },
                 ),
             ]
 
@@ -2276,7 +2342,11 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 source_pixel_bbox=(296, 22, 1283, 76),
                 source_pixel_polygon=((296, 22), (1283, 22), (1283, 76), (296, 76)),
                 font_size=18,
-                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+                provenance={
+                    "content_source": "ocr",
+                    "layout_source": "ocr",
+                    "ocr_confidence": 0.78,
+                },
             )
 
             page = build_page_manifest_from_vlm_analysis(
@@ -2329,7 +2399,11 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 source_pixel_bbox=(296, 22, 1283, 76),
                 source_pixel_polygon=((296, 22), (1283, 22), (1283, 76), (296, 76)),
                 font_size=18,
-                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+                provenance={
+                    "content_source": "ocr",
+                    "layout_source": "ocr",
+                    "ocr_confidence": 0.78,
+                },
             )
 
             page = build_page_manifest_from_vlm_analysis(
@@ -2445,7 +2519,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 text_boxes=ocr_boxes,
             )
 
-        self.assertEqual([box.text for box in page.text_boxes], [f"OCR {index}" for index in range(5)])
+        self.assertEqual(
+            [box.text for box in page.text_boxes], [f"OCR {index}" for index in range(5)]
+        )
         self.assertTrue(
             all(box.provenance.get("layout_source") == "ocr" for box in page.text_boxes)
         )
@@ -2477,7 +2553,12 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             ocr_boxes = [
                 TextBoxSpec(
                     text="x",
-                    source_pixel_bbox=(5 + (index % 20) * 11, 5 + (index // 20) * 10, 12 + (index % 20) * 11, 12 + (index // 20) * 10),
+                    source_pixel_bbox=(
+                        5 + (index % 20) * 11,
+                        5 + (index // 20) * 10,
+                        12 + (index % 20) * 11,
+                        12 + (index // 20) * 10,
+                    ),
                     source_pixel_polygon=(
                         (5 + (index % 20) * 11, 5 + (index // 20) * 10),
                         (12 + (index % 20) * 11, 5 + (index // 20) * 10),
@@ -2851,7 +2932,14 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             page = read_page_manifest(root / "artifacts" / "job-001" / deck.page_manifest_paths[0])
             prs = Presentation(str(output))
             shape_types = [shape.shape_type for shape in prs.slides[0].shapes]
-            mask = Image.open(root / "artifacts" / "job-001" / "assets" / "0000-slide-a" / "vlm-text-bitmap-mask.png")
+            mask = Image.open(
+                root
+                / "artifacts"
+                / "job-001"
+                / "assets"
+                / "0000-slide-a"
+                / "vlm-text-bitmap-mask.png"
+            )
 
         self.assertEqual(result.status, "passed")
         self.assertEqual(len(vlm_provider.calls), 1)
@@ -2859,7 +2947,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertIn("no readable residual glyphs", image_edit_provider.calls[0].prompt)
         self.assertIn("Preserve every unmasked pixel", image_edit_provider.calls[0].prompt)
         self.assertIn("asset_sheet", [request.prompt_id for request in image_edit_provider.calls])
-        asset_sheet_request = next(request for request in image_edit_provider.calls if request.prompt_id == "asset_sheet")
+        asset_sheet_request = next(
+            request for request in image_edit_provider.calls if request.prompt_id == "asset_sheet"
+        )
         self.assertEqual(asset_sheet_request.timeout_seconds, 120)
         self.assertEqual(mask.getpixel((75, 40)), 255)
         self.assertIn("vlm", page.provider_output_paths)
@@ -2868,7 +2958,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual(page.asset_sheets[0].candidate_ids, ["logo"])
         self.assertEqual(page.bitmap_assets[0].provenance["split_method"], "connected_components")
         self.assertEqual(page.provenance["reconstruction_strategy"], "vlm_first")
-        self.assertEqual(page.provenance["text_mask_path"], "assets/0000-slide-a/vlm-text-bitmap-mask.png")
+        self.assertEqual(
+            page.provenance["text_mask_path"], "assets/0000-slide-a/vlm-text-bitmap-mask.png"
+        )
         self.assertEqual([box.text for box in page.text_boxes], ["标题"])
         self.assertGreaterEqual(shape_types.count(MSO_SHAPE_TYPE.TEXT_BOX), 1)
         self.assertGreaterEqual(shape_types.count(MSO_SHAPE_TYPE.PICTURE), 1)
@@ -2956,7 +3048,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
 
         self.assertEqual(page.asset_sheets, [])
         self.assertEqual(len(page.bitmap_assets), 1)
-        self.assertEqual(page.bitmap_assets[0].provenance["asset_strategy"], "source_preserved_crop")
+        self.assertEqual(
+            page.bitmap_assets[0].provenance["asset_strategy"], "source_preserved_crop"
+        )
         self.assertTrue(page.bitmap_assets[0].provenance["asset_sheet_provider_failed"])
         self.assertIn(MSO_SHAPE_TYPE.PICTURE, shape_types)
 
@@ -3058,7 +3152,10 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
 
         self.assertEqual(result.status, "passed")
         self.assertEqual(result.fallback_used, "clean_background_local")
-        self.assertEqual(page.provider_output_paths["image_edit"], "provider_outputs/image_edit/0000-slide-a/backgrounds.json")
+        self.assertEqual(
+            page.provider_output_paths["image_edit"],
+            "provider_outputs/image_edit/0000-slide-a/backgrounds.json",
+        )
         self.assertTrue(page.provenance["clean_background_provider_failed"])
         self.assertEqual(page.provenance["clean_background_strategy"], "local_inpaint")
         self.assertNotEqual(cleaned_icon_pixel, (255, 51, 68))
@@ -3266,8 +3363,12 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertEqual(asset_sheet_provider.calls, [])
         self.assertEqual(page.asset_sheets, [])
         self.assertEqual(len(page.bitmap_assets), 1)
-        self.assertEqual(page.bitmap_assets[0].provenance["asset_strategy"], "source_preserved_crop")
-        self.assertEqual(page.bitmap_assets[0].provenance["asset_sheet_skipped_reason"], "complex_bitmap_region")
+        self.assertEqual(
+            page.bitmap_assets[0].provenance["asset_strategy"], "source_preserved_crop"
+        )
+        self.assertEqual(
+            page.bitmap_assets[0].provenance["asset_sheet_skipped_reason"], "complex_bitmap_region"
+        )
         self.assertEqual(page.bitmap_assets[0].provenance["alpha_strategy"], "opaque_source_crop")
         self.assertNotIn("background_difference_alpha", page.bitmap_assets[0].provenance)
         self.assertIn("alpha_visible_area_ratio", page.bitmap_assets[0].provenance)
@@ -3348,7 +3449,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             page = read_page_manifest(job_dir / deck.page_manifest_paths[0])
 
         self.assertEqual([asset.asset_id for asset in page.bitmap_assets], ["product", "logo"])
-        self.assertEqual(page.bitmap_assets[0].provenance["asset_sheet_skipped_reason"], "complex_bitmap_region")
+        self.assertEqual(
+            page.bitmap_assets[0].provenance["asset_sheet_skipped_reason"], "complex_bitmap_region"
+        )
         self.assertTrue(page.bitmap_assets[1].provenance["asset_sheet_provider_failed"])
 
     def test_vlm_pipeline_falls_back_when_asset_sheet_component_count_is_short(self):
@@ -3442,7 +3545,9 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
 
         self.assertEqual(page.asset_sheets, [])
         self.assertEqual([asset.asset_id for asset in page.bitmap_assets], ["logo-a", "logo-b"])
-        self.assertTrue(all(asset.provenance["asset_sheet_slicing_failed"] for asset in page.bitmap_assets))
+        self.assertTrue(
+            all(asset.provenance["asset_sheet_slicing_failed"] for asset in page.bitmap_assets)
+        )
 
     def test_vlm_pipeline_skips_asset_sheet_for_icon_bitmap_regions(self):
         from src.generative_editable_manifest import read_deck_manifest, read_page_manifest

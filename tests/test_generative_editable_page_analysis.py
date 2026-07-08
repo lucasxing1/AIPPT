@@ -6,7 +6,12 @@ def _box(text: str, bbox: tuple[int, int, int, int], *, approximate: bool = True
     return TextBoxSpec(
         text=text,
         source_pixel_bbox=bbox,
-        source_pixel_polygon=((bbox[0], bbox[1]), (bbox[2], bbox[1]), (bbox[2], bbox[3]), (bbox[0], bbox[3])),
+        source_pixel_polygon=(
+            (bbox[0], bbox[1]),
+            (bbox[2], bbox[1]),
+            (bbox[2], bbox[3]),
+            (bbox[0], bbox[3]),
+        ),
         provenance=provenance,
     )
 

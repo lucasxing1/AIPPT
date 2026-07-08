@@ -9,7 +9,6 @@ from src.generative_editable_foreground_planner import ForegroundCandidate
 from src.generative_editable_manifest import BitmapAssetSpec, RepairAttempt
 from src.generative_editable_providers import (
     FakeImageEditProvider,
-    FakeImageGenerationProvider,
     ImageEditProvider,
 )
 
@@ -95,11 +94,16 @@ class GenerativeEditableAssetsTest(unittest.TestCase):
         self.assertEqual(request.prompt_id, "asset_sheet")
         self.assertIn("fg-001", request.prompt)
         self.assertIn("pure #FF00FF", request.prompt)
-        self.assertIn("Do not use checkerboard, gray, white, shadows, gradients, or scene floors", request.prompt)
+        self.assertIn(
+            "Do not use checkerboard, gray, white, shadows, gradients, or scene floors",
+            request.prompt,
+        )
         self.assertIn("exactly one separated object per candidate id", request.prompt)
         self.assertIn("Do not merge, omit, rename, replace, or add objects", request.prompt)
         self.assertIn("Do not include readable text", request.prompt)
-        self.assertIn("Do not include full cards, panels, charts, or source-slide fragments", request.prompt)
+        self.assertIn(
+            "Do not include full cards, panels, charts, or source-slide fragments", request.prompt
+        )
         self.assertIn("Keep text boxes out of the asset sheet", request.prompt)
         self.assertIn("fg-001 bbox=(10, 12, 50, 42)", request.prompt)
         self.assertIn("classification=bitmap_asset_candidate", request.prompt)
@@ -420,7 +424,9 @@ class GenerativeEditableAssetsTest(unittest.TestCase):
             )
 
         self.assertEqual([asset.asset_id for asset in assets], ["fg-left", "fg-right"])
-        self.assertTrue(all(asset.provenance["ignored_extra_component_count"] == 1 for asset in assets))
+        self.assertTrue(
+            all(asset.provenance["ignored_extra_component_count"] == 1 for asset in assets)
+        )
 
     def test_component_slicing_rejects_large_extra_components_even_when_allowed(self):
         from src.generative_editable_assets import slice_asset_sheet_by_components

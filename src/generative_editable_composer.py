@@ -17,7 +17,6 @@ from pptx.oxml.xmlchemy import OxmlElement
 from pptx.util import Inches, Pt
 
 from .generative_editable_manifest import (
-    DeckManifest,
     NativeShapeSpec,
     PageManifest,
     TextBoxSpec,
@@ -93,7 +92,9 @@ def compose_deck_from_manifests(
     _normalize_pptx_zip(output_path)
 
 
-def _compose_page(slide, prs: Presentation, page: PageManifest, aspect_ratio: str, root: Path) -> None:
+def _compose_page(
+    slide, prs: Presentation, page: PageManifest, aspect_ratio: str, root: Path
+) -> None:
     if page.chosen_background:
         _set_slide_picture_background(slide, _artifact_path(root, page.chosen_background))
     for shape in page.native_shapes:
@@ -289,7 +290,9 @@ def _validate_page_geometry(page: PageManifest, aspect_ratio: str) -> None:
     expected_ratio = expected_width / expected_height
     slide_ratio = actual_width / actual_height
     source_ratio = page.source_image_size[0] / page.source_image_size[1]
-    if not _ratio_close(slide_ratio, expected_ratio) or not _ratio_close(source_ratio, expected_ratio):
+    if not _ratio_close(slide_ratio, expected_ratio) or not _ratio_close(
+        source_ratio, expected_ratio
+    ):
         raise CompositionGeometryError(
             f"page {page.slide_id} geometry does not match deck aspect ratio {aspect_ratio}"
         )
@@ -350,9 +353,10 @@ def _normalize_pptx_zip(path: str | Path) -> None:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pptx") as tmp:
         tmp_path = Path(tmp.name)
     try:
-        with zipfile.ZipFile(pptx_path, "r") as source, zipfile.ZipFile(
-            tmp_path, "w", compression=zipfile.ZIP_DEFLATED
-        ) as target:
+        with (
+            zipfile.ZipFile(pptx_path, "r") as source,
+            zipfile.ZipFile(tmp_path, "w", compression=zipfile.ZIP_DEFLATED) as target,
+        ):
             for name in sorted(source.namelist()):
                 info = zipfile.ZipInfo(name, fixed_date)
                 original = source.getinfo(name)

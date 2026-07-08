@@ -142,7 +142,9 @@ def _validate_bbox_in_bounds(name: str, bbox: PixelBBox, image_size: tuple[int, 
         raise ValueError(f"{name} must be inside source_image_size")
 
 
-def _validate_polygon_in_bounds(name: str, polygon: tuple[Point, ...], image_size: tuple[int, int]) -> None:
+def _validate_polygon_in_bounds(
+    name: str, polygon: tuple[Point, ...], image_size: tuple[int, int]
+) -> None:
     _validate_polygon(name, polygon)
     width, height = image_size
     for x, y in polygon:
@@ -206,7 +208,9 @@ class NativeShapeSpec:
             _validate_point("line_end", self.line_end)
         if self.stroke_width is not None and self.stroke_width <= 0:
             raise ValueError("stroke_width must be positive")
-        if self.radius is not None and (not isinstance(self.radius, int | float) or self.radius < 0):
+        if self.radius is not None and (
+            not isinstance(self.radius, int | float) or self.radius < 0
+        ):
             raise ValueError("radius must be a non-negative number")
 
 
@@ -297,7 +301,9 @@ class PageManifest:
             raise ValueError("source_image_size must be positive")
         if self.slide_size[0] <= 0 or self.slide_size[1] <= 0:
             raise ValueError("slide_size must be positive")
-        _validate_relative_artifact_path("source_image_path", self.source_image_path, SOURCE_PREFIXES)
+        _validate_relative_artifact_path(
+            "source_image_path", self.source_image_path, SOURCE_PREFIXES
+        )
         _validate_relative_artifact_path(
             "text_clean_background", self.text_clean_background, BACKGROUND_PREFIXES
         )
@@ -308,7 +314,9 @@ class PageManifest:
             "chosen_background", self.chosen_background, BACKGROUND_PREFIXES
         )
         for value in self.provider_output_paths.values():
-            _validate_relative_artifact_path("provider_output_paths", value, PROVIDER_OUTPUT_PREFIXES)
+            _validate_relative_artifact_path(
+                "provider_output_paths", value, PROVIDER_OUTPUT_PREFIXES
+            )
         expected_slide_dir = f"{self.page_index:04d}-{_safe_name(self.slide_id)}"
         for stage, value in self.provider_output_paths.items():
             if stage not in PROVIDER_OUTPUT_STAGES:
@@ -317,12 +325,16 @@ class PageManifest:
             if len(parts) < 4 or parts[1] != stage or parts[2] != expected_slide_dir:
                 raise ValueError("provider_output_paths must match stage and slide/page")
         for text_box in self.text_boxes:
-            _validate_bbox_in_bounds("source_pixel_bbox", text_box.source_pixel_bbox, self.source_image_size)
+            _validate_bbox_in_bounds(
+                "source_pixel_bbox", text_box.source_pixel_bbox, self.source_image_size
+            )
             _validate_polygon_in_bounds(
                 "source_pixel_polygon", text_box.source_pixel_polygon, self.source_image_size
             )
         for shape in self.native_shapes:
-            _validate_bbox_in_bounds("source_pixel_bbox", shape.source_pixel_bbox, self.source_image_size)
+            _validate_bbox_in_bounds(
+                "source_pixel_bbox", shape.source_pixel_bbox, self.source_image_size
+            )
             if shape.line_start is not None:
                 _validate_point_in_bounds("line_start", shape.line_start, self.source_image_size)
             if shape.line_end is not None:
@@ -332,7 +344,9 @@ class PageManifest:
                 "source_pixel_bbox", candidate.source_pixel_bbox, self.source_image_size
             )
         for asset in self.bitmap_assets:
-            _validate_bbox_in_bounds("source_pixel_bbox", asset.source_pixel_bbox, self.source_image_size)
+            _validate_bbox_in_bounds(
+                "source_pixel_bbox", asset.source_pixel_bbox, self.source_image_size
+            )
 
 
 @dataclass(frozen=True)
@@ -354,7 +368,9 @@ class DeckManifest:
         _validate_status("validation_status", self.validation_status, VALIDATION_STATUSES)
         if len(self.slide_order) != len(self.page_manifest_paths):
             raise ValueError("page_manifest_paths must match slide_order length")
-        for page_index, (slide_id, path) in enumerate(zip(self.slide_order, self.page_manifest_paths)):
+        for page_index, (slide_id, path) in enumerate(
+            zip(self.slide_order, self.page_manifest_paths)
+        ):
             _validate_relative_artifact_path("page_manifest_paths", path, PAGE_PREFIXES)
             expected = f"{page_index:04d}-{_safe_name(slide_id)}.json"
             if Path(path).name != expected:
@@ -392,9 +408,7 @@ def page_manifest_from_dict(data: dict[str, Any]) -> PageManifest:
     payload = dict(data)
     payload["source_image_size"] = tuple(payload["source_image_size"])
     payload["slide_size"] = tuple(payload["slide_size"])
-    payload["text_boxes"] = [
-        _text_box_from_dict(item) for item in payload.get("text_boxes", [])
-    ]
+    payload["text_boxes"] = [_text_box_from_dict(item) for item in payload.get("text_boxes", [])]
     payload["native_shapes"] = [
         _native_shape_from_dict(item) for item in payload.get("native_shapes", [])
     ]
@@ -404,9 +418,7 @@ def page_manifest_from_dict(data: dict[str, Any]) -> PageManifest:
     payload["bitmap_assets"] = [
         _bitmap_asset_from_dict(item) for item in payload.get("bitmap_assets", [])
     ]
-    payload["asset_sheets"] = [
-        AssetSheetSpec(**item) for item in payload.get("asset_sheets", [])
-    ]
+    payload["asset_sheets"] = [AssetSheetSpec(**item) for item in payload.get("asset_sheets", [])]
     payload["repair_attempts"] = [
         RepairAttempt(**item) for item in payload.get("repair_attempts", [])
     ]
@@ -446,9 +458,7 @@ def _polygon_from_json(value: list[list[int]] | tuple[Point, ...]) -> tuple[Poin
     return tuple(tuple(point) for point in value)
 
 
-def sanitize_persisted_payload(
-    value: Any, *, _key: str = "", _redact_strings: bool = False
-) -> Any:
+def sanitize_persisted_payload(value: Any, *, _key: str = "", _redact_strings: bool = False) -> Any:
     if isinstance(value, dict):
         safe: dict[str, Any] = {}
         redact_nested = _redact_strings or _should_redact_string_value(_key)

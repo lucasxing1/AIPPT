@@ -27,10 +27,7 @@ class GenerativeEditableTextCandidatesTest(unittest.TestCase):
 
         self.assertTrue(
             any(
-                bbox[0] <= 70
-                and 150 <= bbox[1] <= 190
-                and bbox[2] >= 620
-                and 230 <= bbox[3] <= 280
+                bbox[0] <= 70 and 150 <= bbox[1] <= 190 and bbox[2] >= 620 and 230 <= bbox[3] <= 280
                 for bbox in candidates
             ),
             candidates,
@@ -73,8 +70,12 @@ class GenerativeEditableTextCandidatesTest(unittest.TestCase):
             image = Image.new("RGB", (1000, 560), "#030914")
             draw = ImageDraw.Draw(image)
             font = ImageFont.truetype(str(font_path), 26)
-            draw.rounded_rectangle((28, 70, 390, 420), radius=16, fill="#0B2340", outline="#1D4ED8", width=2)
-            draw.rounded_rectangle((410, 70, 960, 420), radius=16, fill="#0B2340", outline="#1D4ED8", width=2)
+            draw.rounded_rectangle(
+                (28, 70, 390, 420), radius=16, fill="#0B2340", outline="#1D4ED8", width=2
+            )
+            draw.rounded_rectangle(
+                (410, 70, 960, 420), radius=16, fill="#0B2340", outline="#1D4ED8", width=2
+            )
             draw.ellipse((48, 88, 76, 116), fill="#60A5FA")
             draw.ellipse((430, 88, 458, 116), fill="#60A5FA")
             draw.text((86, 88), "日常操作", font=font, fill="#F8FAFC")
@@ -84,11 +85,17 @@ class GenerativeEditableTextCandidatesTest(unittest.TestCase):
             candidates = detect_text_candidate_bboxes(str(image_path))
 
         self.assertTrue(
-            any(75 <= bbox[0] <= 95 and 80 <= bbox[1] <= 100 and 170 <= bbox[2] <= 230 for bbox in candidates),
+            any(
+                75 <= bbox[0] <= 95 and 80 <= bbox[1] <= 100 and 170 <= bbox[2] <= 230
+                for bbox in candidates
+            ),
             candidates,
         )
         self.assertTrue(
-            any(415 <= bbox[0] <= 475 and 75 <= bbox[1] <= 105 and 580 <= bbox[2] <= 650 for bbox in candidates),
+            any(
+                415 <= bbox[0] <= 475 and 75 <= bbox[1] <= 105 and 580 <= bbox[2] <= 650
+                for bbox in candidates
+            ),
             candidates,
         )
 
@@ -100,7 +107,10 @@ class GenerativeEditableTextCandidatesTest(unittest.TestCase):
         candidates = detect_text_candidate_bboxes(str(image_path))
 
         self.assertTrue(
-            any(140 <= bbox[0] <= 170 and 120 <= bbox[1] <= 145 and 320 <= bbox[2] <= 360 for bbox in candidates),
+            any(
+                140 <= bbox[0] <= 170 and 120 <= bbox[1] <= 145 and 320 <= bbox[2] <= 360
+                for bbox in candidates
+            ),
             candidates,
         )
 
@@ -112,18 +122,29 @@ class GenerativeEditableTextCandidatesTest(unittest.TestCase):
         candidates = detect_text_candidate_bboxes(str(image_path))
 
         self.assertTrue(
-            any(1160 <= bbox[0] <= 1210 and 370 <= bbox[1] <= 395 and 1520 <= bbox[2] <= 1560 for bbox in candidates),
+            any(
+                1160 <= bbox[0] <= 1210 and 370 <= bbox[1] <= 395 and 1520 <= bbox[2] <= 1560
+                for bbox in candidates
+            ),
             candidates,
         )
         self.assertTrue(
-            any(1020 <= bbox[0] <= 1060 and 800 <= bbox[1] <= 825 and 1200 <= bbox[2] <= 1230 for bbox in candidates),
+            any(
+                1020 <= bbox[0] <= 1060 and 800 <= bbox[1] <= 825 and 1200 <= bbox[2] <= 1230
+                for bbox in candidates
+            ),
             candidates,
         )
         self.assertFalse(
-            any(bbox[0] <= 120 and bbox[2] >= 1000 and 120 <= bbox[1] <= 220 for bbox in candidates),
+            any(
+                bbox[0] <= 120 and bbox[2] >= 1000 and 120 <= bbox[1] <= 220 for bbox in candidates
+            ),
             candidates,
         )
         self.assertTrue(
-            any(780 <= bbox[0] <= 820 and 120 <= bbox[1] <= 145 and 1010 <= bbox[2] <= 1060 for bbox in candidates),
+            any(
+                780 <= bbox[0] <= 820 and 120 <= bbox[1] <= 145 and 1010 <= bbox[2] <= 1060
+                for bbox in candidates
+            ),
             candidates,
         )

@@ -1,6 +1,5 @@
 import base64
 import http.client
-import json
 import tempfile
 import time
 import unittest
@@ -51,7 +50,12 @@ def _provider(role="ocr_model", model="vision-model", provider="openai_vision"):
 
 class LiveProviderAdapterTest(unittest.TestCase):
     def test_route_dependency_builder_uses_live_provider_adapters_for_non_fake_config(self):
-        from src.generative_editable_config import GenerativeEditableConfig, QualityConfig, RetryConfig, TimeoutConfig
+        from src.generative_editable_config import (
+            GenerativeEditableConfig,
+            QualityConfig,
+            RetryConfig,
+            TimeoutConfig,
+        )
 
         config = GenerativeEditableConfig(
             ocr=_provider(provider="paddle_ocr_vl"),
@@ -77,7 +81,12 @@ class LiveProviderAdapterTest(unittest.TestCase):
         )
 
     def test_route_dependency_builder_passes_configured_timeout_to_ocr_provider(self):
-        from src.generative_editable_config import GenerativeEditableConfig, QualityConfig, RetryConfig, TimeoutConfig
+        from src.generative_editable_config import (
+            GenerativeEditableConfig,
+            QualityConfig,
+            RetryConfig,
+            TimeoutConfig,
+        )
 
         config = GenerativeEditableConfig(
             ocr=_provider(provider="paddle_ocr_vl"),
@@ -98,7 +107,12 @@ class LiveProviderAdapterTest(unittest.TestCase):
         self.assertEqual(dependencies.ocr_provider.timeout_seconds, 77)
 
     def test_route_dependency_builder_uses_local_tesseract_ocr_provider_when_configured(self):
-        from src.generative_editable_config import GenerativeEditableConfig, QualityConfig, RetryConfig, TimeoutConfig
+        from src.generative_editable_config import (
+            GenerativeEditableConfig,
+            QualityConfig,
+            RetryConfig,
+            TimeoutConfig,
+        )
 
         config = GenerativeEditableConfig(
             ocr=ProviderConfig(
@@ -138,7 +152,10 @@ class LiveProviderAdapterTest(unittest.TestCase):
             image_path = Path(tmp) / "slide.png"
             Image.new("RGB", (800, 450), "white").save(image_path)
             with (
-                patch("src.generative_editable_providers.shutil.which", return_value="/usr/bin/tesseract"),
+                patch(
+                    "src.generative_editable_providers.shutil.which",
+                    return_value="/usr/bin/tesseract",
+                ),
                 patch("src.generative_editable_providers.subprocess.run") as run,
             ):
                 run.return_value.stdout = tsv
@@ -250,7 +267,7 @@ class LiveProviderAdapterTest(unittest.TestCase):
                     "message": {
                         "content": (
                             "Here is the OCR result:\n"
-                            "{\"items\":[{\"text\":\"Title\",\"bbox\":[1,2,30,40],\"confidence\":0.9}]}"
+                            '{"items":[{"text":"Title","bbox":[1,2,30,40],"confidence":0.9}]}'
                             "\nDone."
                         )
                     }
@@ -302,11 +319,11 @@ class LiveProviderAdapterTest(unittest.TestCase):
                 {
                     "message": {
                         "content": (
-                            "{\"items\":["
-                            "{\"text\":\"理想汽车技术实验室\",\"bbox\":[118,86,372,124],"
-                            "\"confidence\":0.93,\"font_size\":22,\"color\":\"#F8FAFC\"},"
-                            "{\"text\":\"理想L9: 旗舰增程SUV的技术实验\",\"bbox\":[146,178,544,214],"
-                            "\"confidence\":0.91,\"font_size\":21,\"color\":\"#38BDF8\"}"
+                            '{"items":['
+                            '{"text":"理想汽车技术实验室","bbox":[118,86,372,124],'
+                            '"confidence":0.93,"font_size":22,"color":"#F8FAFC"},'
+                            '{"text":"理想L9: 旗舰增程SUV的技术实验","bbox":[146,178,544,214],'
+                            '"confidence":0.91,"font_size":21,"color":"#38BDF8"}'
                             "]}"
                         )
                     }
@@ -341,15 +358,7 @@ class LiveProviderAdapterTest(unittest.TestCase):
         self.assertEqual(result.items[0].color_hex, "#F8FAFC")
 
     def test_paddleocr_vl_plain_text_response_uses_deduped_local_layout(self):
-        payload = {
-            "choices": [
-                {
-                    "message": {
-                        "content": "Title\n\n29in 6K"
-                    }
-                }
-            ]
-        }
+        payload = {"choices": [{"message": {"content": "Title\n\n29in 6K"}}]}
 
         provider = _provider(model="PaddlePaddle/PaddleOCR-VL-1.5")
         with tempfile.TemporaryDirectory() as tmp:
@@ -559,7 +568,11 @@ class LiveProviderAdapterTest(unittest.TestCase):
         )
 
     def test_openai_chat_image_edit_normalization_errors_are_redacted(self):
-        payload = {"choices": [{"message": {"content": "https://signed.example/image.png?token=secret-key"}}]}
+        payload = {
+            "choices": [
+                {"message": {"content": "https://signed.example/image.png?token=secret-key"}}
+            ]
+        }
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -577,14 +590,20 @@ class LiveProviderAdapterTest(unittest.TestCase):
                 post.return_value = _FakeResponse(payload)
                 with self.assertRaises(ProviderError) as ctx:
                     OpenAIChatImageEditProvider(
-                        _provider(role="edit_model", model="edit-model", provider="openai_image_edit")
+                        _provider(
+                            role="edit_model", model="edit-model", provider="openai_image_edit"
+                        )
                     ).edit(request)
 
         self.assertNotIn("secret-key", str(ctx.exception))
         self.assertIn("[URL_REDACTED]", str(ctx.exception))
 
     def test_openai_chat_image_edit_marks_download_ssl_eof_as_retryable(self):
-        payload = {"choices": [{"message": {"content": "https://signed.example/image.png?token=secret-key"}}]}
+        payload = {
+            "choices": [
+                {"message": {"content": "https://signed.example/image.png?token=secret-key"}}
+            ]
+        }
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -609,7 +628,9 @@ class LiveProviderAdapterTest(unittest.TestCase):
                     )
                     with self.assertRaises(ProviderError) as ctx:
                         OpenAIChatImageEditProvider(
-                            _provider(role="edit_model", model="edit-model", provider="openai_image_edit")
+                            _provider(
+                                role="edit_model", model="edit-model", provider="openai_image_edit"
+                            )
                         ).edit(request)
 
         self.assertTrue(ctx.exception.retryable)
@@ -617,7 +638,11 @@ class LiveProviderAdapterTest(unittest.TestCase):
         self.assertIn("[URL_REDACTED]", str(ctx.exception))
 
     def test_openai_chat_image_edit_marks_download_http_404_as_non_retryable(self):
-        payload = {"choices": [{"message": {"content": "https://signed.example/missing.png?token=secret-key"}}]}
+        payload = {
+            "choices": [
+                {"message": {"content": "https://signed.example/missing.png?token=secret-key"}}
+            ]
+        }
         response = requests.Response()
         response.status_code = 404
         error = requests.HTTPError("404 Client Error", response=response)
@@ -640,7 +665,9 @@ class LiveProviderAdapterTest(unittest.TestCase):
                     get.return_value.raise_for_status.side_effect = error
                     with self.assertRaises(ProviderError) as ctx:
                         OpenAIChatImageEditProvider(
-                            _provider(role="edit_model", model="edit-model", provider="openai_image_edit")
+                            _provider(
+                                role="edit_model", model="edit-model", provider="openai_image_edit"
+                            )
                         ).edit(request)
 
         self.assertFalse(ctx.exception.retryable)
@@ -671,7 +698,9 @@ class LiveProviderAdapterTest(unittest.TestCase):
                     get.return_value.raise_for_status.side_effect = error
                     with self.assertRaises(ProviderError) as ctx:
                         OpenAIChatImageEditProvider(
-                            _provider(role="edit_model", model="edit-model", provider="openai_image_edit")
+                            _provider(
+                                role="edit_model", model="edit-model", provider="openai_image_edit"
+                            )
                         ).edit(request)
 
         self.assertTrue(ctx.exception.retryable)

@@ -158,7 +158,9 @@ class GenerativeEditableForegroundPlannerTest(unittest.TestCase):
             component_key="same",
             provenance={"shape_hint": "rectangle"},
         )
-        duplicate = replace(first, candidate_id="duplicate", source_pixel_bbox=(30, 10, 40, 20), provenance=1)
+        duplicate = replace(
+            first, candidate_id="duplicate", source_pixel_bbox=(30, 10, 40, 20), provenance=1
+        )
 
         reused = record_component_reuse([first, duplicate])
         specs = foreground_candidates_to_manifest_specs(reused)

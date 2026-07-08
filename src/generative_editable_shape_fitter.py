@@ -51,7 +51,9 @@ def fit_native_shape(
             or _line_start(candidate.source_pixel_bbox),
             line_end=_line_endpoint(provenance.get("line_end"))
             or _line_end(candidate.source_pixel_bbox),
-            stroke_width=float(provenance.get("stroke_width") or _line_stroke_width(candidate.source_pixel_bbox)),
+            stroke_width=float(
+                provenance.get("stroke_width") or _line_stroke_width(candidate.source_pixel_bbox)
+            ),
             opacity=1.0,
             confidence=candidate.confidence,
             provenance={
@@ -91,7 +93,10 @@ def fit_native_shape_with_fallback(
     if shape is not None:
         return ShapeFitResult(native_shape=shape)
     provenance = _provenance_dict(candidate.provenance)
-    if candidate.classification == "native_shape_candidate" and candidate.confidence < min_confidence:
+    if (
+        candidate.classification == "native_shape_candidate"
+        and candidate.confidence < min_confidence
+    ):
         reason = "below_native_shape_confidence_threshold"
     elif candidate.classification == "native_shape_candidate":
         reason = "unsupported_or_disabled_native_shape"
@@ -130,7 +135,9 @@ def _line_endpoint(value: object) -> tuple[int, int] | None:
         return None
 
 
-def _validate_candidate_bounds(bbox: tuple[int, int, int, int], image_size: tuple[int, int]) -> None:
+def _validate_candidate_bounds(
+    bbox: tuple[int, int, int, int], image_size: tuple[int, int]
+) -> None:
     left, top, right, bottom = bbox
     width, height = image_size
     if min(bbox) < 0 or right <= left or bottom <= top or right > width or bottom > height:

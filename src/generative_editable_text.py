@@ -140,18 +140,16 @@ def extract_text_with_validation(
     )
 
 
-def _text_box_from_metadata_and_ocr(
-    metadata: dict[str, Any], ocr_item: OCRTextItem
-) -> TextBoxSpec:
+def _text_box_from_metadata_and_ocr(metadata: dict[str, Any], ocr_item: OCRTextItem) -> TextBoxSpec:
     style_hint = metadata.get("style_hint") or {}
     font_family = style_hint.get("font_family") or _font_family_for_ocr_item(ocr_item)
     provenance = {
         "content_source": "aippt_metadata",
         "layout_source": "ocr",
         "ocr_confidence": ocr_item.confidence,
-        "ocr_provenance": sanitize_persisted_payload(
-            {"payload": dict(ocr_item.provenance)}
-        ).get("payload", {}),
+        "ocr_provenance": sanitize_persisted_payload({"payload": dict(ocr_item.provenance)}).get(
+            "payload", {}
+        ),
         "metadata_role": metadata.get("role", ""),
         "metadata_order": metadata.get("order"),
     }
@@ -303,11 +301,7 @@ def _is_likely_spurious_ocr_item(
     image_area = max(1, image_size[0] * image_size[1])
     if alnum_count <= 1 and bbox_area <= 500:
         return True
-    return (
-        alnum_count <= 3
-        and bbox_area / float(image_area) >= 0.15
-        and not text.isalnum()
-    )
+    return alnum_count <= 3 and bbox_area / float(image_area) >= 0.15 and not text.isalnum()
 
 
 def _should_ignore_spurious_ocr_item(
@@ -348,7 +342,10 @@ def _should_ignore_duplicate_approximate_ocr_item(
     key = _normalize_match_text(ocr_item.text)
     if len(key) < 4:
         return False
-    return any(_approximate_bboxes_overlap(ocr_item.bbox, kept_bbox) for kept_bbox in kept_bboxes.get(key, []))
+    return any(
+        _approximate_bboxes_overlap(ocr_item.bbox, kept_bbox)
+        for kept_bbox in kept_bboxes.get(key, [])
+    )
 
 
 def _record_kept_approximate_ocr_item(

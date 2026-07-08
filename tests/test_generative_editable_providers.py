@@ -137,9 +137,15 @@ class OCRProviderContractTest(unittest.TestCase):
 
             def fake_post(config, payload, operation, timeout_seconds):
                 payloads.append(payload)
-                return {"choices": [{"message": {"content": "全周期安全管理与OTA进化能力，让车辆越用越新。"}}]}
+                return {
+                    "choices": [
+                        {"message": {"content": "全周期安全管理与OTA进化能力，让车辆越用越新。"}}
+                    ]
+                }
 
-            with patch("src.generative_editable_providers._post_openai_chat", side_effect=fake_post):
+            with patch(
+                "src.generative_editable_providers._post_openai_chat", side_effect=fake_post
+            ):
                 result = provider.extract_text(str(image_path))
 
         prompt = payloads[0]["messages"][0]["content"][0]["text"]
@@ -192,7 +198,7 @@ class OCRProviderContractTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ProviderError, "object or array"):
             _extract_ocr_text_items(
-                {"choices": [{"message": {"content": "\"I cannot extract text from this image.\""}}]},
+                {"choices": [{"message": {"content": '"I cannot extract text from this image."'}}]},
                 config,
                 (800, 450),
             )
@@ -633,7 +639,9 @@ class ImageGenerationProviderContractTest(unittest.TestCase):
                 image_base64 = base64.b64encode(output.read_bytes()).decode()
                 return {"data": [{"url": f"data:image/png;base64,{image_base64}"}]}
 
-            with patch("src.generative_editable_providers._post_openai_chat", side_effect=fake_post):
+            with patch(
+                "src.generative_editable_providers._post_openai_chat", side_effect=fake_post
+            ):
                 provider.generate(
                     ImageGenerationRequest(
                         prompt_id="asset_sheet",
@@ -676,7 +684,9 @@ class ProviderErrorHandlingTest(unittest.TestCase):
         )
         payload = {"model": "gpt-5.5", "messages": [{"role": "user", "content": "OK"}]}
 
-        with patch("src.generative_editable_providers.requests.post", return_value=FakeResponse()) as post:
+        with patch(
+            "src.generative_editable_providers.requests.post", return_value=FakeResponse()
+        ) as post:
             result = _post_openai_chat(
                 config,
                 payload,
@@ -735,7 +745,9 @@ class ProviderErrorHandlingTest(unittest.TestCase):
             provider_error_code="insufficient_user_quota https://secret.example/path api_key=secret",
         )
 
-        self.assertEqual(error.provider_error_code, "insufficient_user_quota_URL_REDACTED_api_key_REDACTED")
+        self.assertEqual(
+            error.provider_error_code, "insufficient_user_quota_URL_REDACTED_api_key_REDACTED"
+        )
         self.assertNotIn("://", error.provider_error_code)
         self.assertNotIn("=", error.provider_error_code)
         self.assertNotIn("secret", error.provider_error_code)

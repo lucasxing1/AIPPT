@@ -46,7 +46,9 @@ def local_cleanup_text_mask(
     source_path = Path(source_image_path)
     mask_path = Path(text_mask_path)
     output_path = Path(output_asset_path)
-    artifact_root = Path(asset_root).resolve() if asset_root is not None else _infer_artifact_root(output_path)
+    artifact_root = (
+        Path(asset_root).resolve() if asset_root is not None else _infer_artifact_root(output_path)
+    )
     _validate_background_paths(
         source_image_path=source_path,
         output_asset_path=output_path,
@@ -348,9 +350,13 @@ def create_base_clean_background(
             "and visual objects unless they are inside those removal regions. "
         )
         if removal_bboxes:
-            removal_instruction += "Removal boxes: " + ", ".join(str(bbox) for bbox in removal_bboxes) + ". "
+            removal_instruction += (
+                "Removal boxes: " + ", ".join(str(bbox) for bbox in removal_bboxes) + ". "
+            )
     else:
-        removal_instruction = "Omit movable foreground graphics and baked text from this background layer."
+        removal_instruction = (
+            "Omit movable foreground graphics and baked text from this background layer."
+        )
     if mask_path is not None or removal_bboxes:
         removal_instruction = " " + removal_instruction
 
@@ -359,8 +365,7 @@ def create_base_clean_background(
         prompt_id="base_clean_background",
         prompt=(
             "Return the slide background layer only. Preserve theme background, edge "
-            "decoration, ambient texture, and layout background. "
-            + removal_instruction
+            "decoration, ambient texture, and layout background. " + removal_instruction
         ),
         output_asset_path=str(output_asset_path),
         asset_root=str(asset_root),
@@ -449,7 +454,9 @@ def _normalize_background_to_source_size(
     return {}
 
 
-def _sample_border_pixels(image: Image.Image, bbox: tuple[int, int, int, int]) -> list[tuple[int, int, int]]:
+def _sample_border_pixels(
+    image: Image.Image, bbox: tuple[int, int, int, int]
+) -> list[tuple[int, int, int]]:
     left, top, right, bottom = bbox
     expanded = (
         max(0, left - 2),

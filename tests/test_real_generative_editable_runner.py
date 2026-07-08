@@ -105,7 +105,6 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
         from api.routes import export as export_route
 
         captured = {}
-        dependency_sentinel = object()
 
         def fake_pipeline(**kwargs):
             from pptx import Presentation
@@ -290,7 +289,9 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             stdout = io.StringIO()
             with (
                 patch.object(runner, "_vlm_dependencies", return_value=object()),
-                patch.object(runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline),
+                patch.object(
+                    runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline
+                ),
                 patch.object(runner, "_write_preview_reports", return_value=[]),
                 redirect_stdout(stdout),
             ):
@@ -315,7 +316,9 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(line["status"], "fallback_used")
-        self.assertEqual(Path(line["output_path"]).name, "vlm-provider-fallback.raster-fallback.pptx")
+        self.assertEqual(
+            Path(line["output_path"]).name, "vlm-provider-fallback.raster-fallback.pptx"
+        )
         self.assertTrue(output_exists)
         self.assertEqual(report["fallback_used"], "raster_pptx")
         self.assertEqual(report["object_stats"]["slides"][0]["full_slide_picture_count"], 1)
@@ -371,7 +374,9 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             stdout = io.StringIO()
             with (
                 patch.object(runner, "_vlm_dependencies", return_value=dependency_sentinel),
-                patch.object(runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline),
+                patch.object(
+                    runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline
+                ),
                 patch.object(
                     runner,
                     "run_generative_editable_pipeline",
@@ -452,7 +457,9 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             stdout = io.StringIO()
             with (
                 patch.object(runner, "_vlm_dependencies", side_effect=fake_vlm_dependencies),
-                patch.object(runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline),
+                patch.object(
+                    runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline
+                ),
                 patch.object(runner, "_write_preview_reports", return_value=[]),
                 redirect_stdout(stdout),
             ):
@@ -539,7 +546,9 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             with (
                 patch.object(runner, "load_generative_editable_config", return_value=config),
                 patch.object(runner, "_vlm_dependencies", side_effect=fake_vlm_dependencies),
-                patch.object(runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline),
+                patch.object(
+                    runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline
+                ),
                 patch.object(runner, "_write_preview_reports", return_value=[]),
                 redirect_stdout(stdout),
             ):
@@ -603,11 +612,15 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             stdout = io.StringIO()
             with (
                 patch.object(runner, "_vlm_dependencies", return_value=object()),
-                patch.object(runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline),
+                patch.object(
+                    runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline
+                ),
                 patch.object(
                     runner,
                     "_write_preview_reports",
-                    return_value=[{"status": "failed", "issues": [{"code": "preview_similarity_failed"}]}],
+                    return_value=[
+                        {"status": "failed", "issues": [{"code": "preview_similarity_failed"}]}
+                    ],
                 ),
                 redirect_stdout(stdout),
             ):
@@ -635,7 +648,12 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
         from api.routes import export as export_route
         from pptx import Presentation
 
-        from src.generative_editable_manifest import DeckManifest, PageManifest, TextBoxSpec, write_manifest
+        from src.generative_editable_manifest import (
+            DeckManifest,
+            PageManifest,
+            TextBoxSpec,
+            write_manifest,
+        )
 
         def fake_pipeline(**kwargs):
             source_path = Path(kwargs["slides"][0].image_path)
@@ -1105,7 +1123,10 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
                 }
 
             stdout = io.StringIO()
-            with patch.object(runner, "_run_subprocess_json", side_effect=fake_subprocess), redirect_stdout(stdout):
+            with (
+                patch.object(runner, "_run_subprocess_json", side_effect=fake_subprocess),
+                redirect_stdout(stdout),
+            ):
                 exit_code = main(
                     [
                         "gates",
@@ -1667,8 +1688,16 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             output_path = root / "job.pptx"
             prs = Presentation()
             slide = prs.slides.add_slide(prs.slide_layouts[6])
-            slide.shapes.add_picture(str(_solid_png(root / "background.png")), 0, 0, width=prs.slide_width, height=prs.slide_height)
-            slide.shapes.add_picture(str(_solid_png(root / "anchor.png")), 100, 100, width=1000, height=600)
+            slide.shapes.add_picture(
+                str(_solid_png(root / "background.png")),
+                0,
+                0,
+                width=prs.slide_width,
+                height=prs.slide_height,
+            )
+            slide.shapes.add_picture(
+                str(_solid_png(root / "anchor.png")), 100, 100, width=1000, height=600
+            )
             slide.shapes.add_textbox(100, 100, 1000, 300).text = "核心架构"
             prs.save(output_path)
             write_manifest(
@@ -1729,7 +1758,12 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
         import scripts.run_real_generative_editable_pptx as runner
 
         from src.generative_editable_composer import compose_deck_from_manifests
-        from src.generative_editable_manifest import DeckManifest, PageManifest, TextBoxSpec, write_manifest
+        from src.generative_editable_manifest import (
+            DeckManifest,
+            PageManifest,
+            TextBoxSpec,
+            write_manifest,
+        )
 
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -1845,7 +1879,13 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             output_path = root / "job.pptx"
             prs = Presentation()
             slide = prs.slides.add_slide(prs.slide_layouts[6])
-            slide.shapes.add_picture(str(_solid_png(root / "background.png")), 0, 0, width=prs.slide_width, height=prs.slide_height)
+            slide.shapes.add_picture(
+                str(_solid_png(root / "background.png")),
+                0,
+                0,
+                width=prs.slide_width,
+                height=prs.slide_height,
+            )
             slide.shapes.add_textbox(100, 100, 1000, 300).text = "核心架构"
             prs.save(output_path)
             write_manifest(
@@ -1896,7 +1936,9 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
                 object_stats=stats,
             )
 
-        self.assertEqual([issue["code"] for issue in issues], ["source_preserving_low_opacity_overlay_degraded"])
+        self.assertEqual(
+            [issue["code"] for issue in issues], ["source_preserving_low_opacity_overlay_degraded"]
+        )
         self.assertEqual(issues[0]["severity"], "error")
 
     def test_reconstruction_issues_fail_for_oversized_bitmap_asset_coverage(self):
@@ -2591,7 +2633,7 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
                         "code": "source_preserving_low_opacity_overlay_degraded",
                         "severity": "error",
                     }
-                ]
+                ],
             ),
             "failed",
         )
@@ -2603,7 +2645,7 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
                         "code": "no_decomposed_visual_elements",
                         "severity": "error",
                     }
-                ]
+                ],
             ),
             "failed",
         )
@@ -2667,7 +2709,13 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             output_path = root / "job.pptx"
             prs = Presentation()
             slide = prs.slides.add_slide(prs.slide_layouts[6])
-            slide.shapes.add_picture(str(_solid_png(root / "background.png")), 0, 0, width=prs.slide_width, height=prs.slide_height)
+            slide.shapes.add_picture(
+                str(_solid_png(root / "background.png")),
+                0,
+                0,
+                width=prs.slide_width,
+                height=prs.slide_height,
+            )
             prs.save(output_path)
             write_manifest(
                 job_dir / "pages" / "0000-slide-1.json",
@@ -2718,7 +2766,9 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             )
 
         self.assertIn("no_editable_text_after_ocr_filtering", [issue["code"] for issue in issues])
-        warning = next(issue for issue in issues if issue["code"] == "no_editable_text_after_ocr_filtering")
+        warning = next(
+            issue for issue in issues if issue["code"] == "no_editable_text_after_ocr_filtering"
+        )
         self.assertEqual(warning["severity"], "warning")
         self.assertEqual(warning["details"]["filtered_ocr_issue_count"], 1)
         self.assertEqual(warning["details"]["ocr_returned_count"], 2)
@@ -2735,7 +2785,10 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
                 {
                     "page": 1,
                     "reconstruction_issues": [
-                        {"code": "source_preserving_low_opacity_overlay_degraded", "severity": "error"}
+                        {
+                            "code": "source_preserving_low_opacity_overlay_degraded",
+                            "severity": "error",
+                        }
                     ],
                 },
                 {
@@ -2992,7 +3045,9 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             page_report = report["page_reports"][0]
 
         self.assertEqual(page_report["object_stats"]["totals"]["TEXT_BOX"], 3)
-        self.assertEqual(page_report["reconstruction_issues"][0]["code"], "source_raster_guardrail_degraded")
+        self.assertEqual(
+            page_report["reconstruction_issues"][0]["code"], "source_raster_guardrail_degraded"
+        )
         self.assertEqual(page_report["validation_status"], "degraded")
         self.assertEqual(page_report["validation_issues"], ["source_raster_guardrail_degraded"])
         self.assertEqual(page_report["active_stage"], "base_clean_background")

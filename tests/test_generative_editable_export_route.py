@@ -215,7 +215,9 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
                 base_url="fake",
                 api_key="fake",
             ),
-            generation_model=ProviderConfig(role="image_model", model="image", base_url="fake", api_key="fake"),
+            generation_model=ProviderConfig(
+                role="image_model", model="image", base_url="fake", api_key="fake"
+            ),
             use_aippt_metadata_first=False,
             ocr_min_confidence=0.75,
             quality=QualityConfig(),
@@ -247,7 +249,10 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
             output = root / "out.pptx"
             with (
                 patch("api.routes.export.load_generative_editable_config", return_value=config),
-                patch("api.routes.export.run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline),
+                patch(
+                    "api.routes.export.run_vlm_editable_pptx_pipeline",
+                    side_effect=fake_vlm_pipeline,
+                ),
                 patch(
                     "api.routes.export._build_vlm_editable_pipeline_dependencies",
                     return_value=dependency_sentinel,
@@ -423,7 +428,9 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
             ),
             use_aippt_metadata_first=False,
             ocr_min_confidence=0.83,
-            quality=QualityConfig(preview_similarity_threshold=0.86, require_preview_validation=True),
+            quality=QualityConfig(
+                preview_similarity_threshold=0.86, require_preview_validation=True
+            ),
             retries=RetryConfig(provider_max_attempts=4, backoff_seconds=0.5),
             timeouts=TimeoutConfig(provider_call=77, page=500),
         )
@@ -434,12 +441,16 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
             adapter="openai_chat",
         )
 
-        with patch("api.routes.export.load_default_profiles", return_value=SimpleNamespace(vlm=vlm_profile)):
+        with patch(
+            "api.routes.export.load_default_profiles", return_value=SimpleNamespace(vlm=vlm_profile)
+        ):
             dependencies = export_route._build_vlm_editable_pipeline_dependencies(config)
 
         self.assertEqual(dependencies.vlm_provider.config.model, "vlm")
         self.assertEqual(dependencies.image_edit_provider.config.role, "edit_model")
-        self.assertEqual(dependencies.asset_sheet_image_edit_provider.config.role, "asset_sheet_edit_model")
+        self.assertEqual(
+            dependencies.asset_sheet_image_edit_provider.config.role, "asset_sheet_edit_model"
+        )
         self.assertEqual(dependencies.ocr_provider.config.role, "ocr_model")
         self.assertEqual(dependencies.ocr_min_confidence, 0.83)
         self.assertEqual(dependencies.provider_timeout_seconds, 77)
@@ -505,7 +516,9 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
             dependencies = export_route._build_generative_editable_pipeline_dependencies()
 
         self.assertEqual(dependencies.image_edit_provider.config.role, "clean_edit_model")
-        self.assertEqual(dependencies.asset_sheet_image_edit_provider.config.role, "asset_sheet_edit_model")
+        self.assertEqual(
+            dependencies.asset_sheet_image_edit_provider.config.role, "asset_sheet_edit_model"
+        )
         self.assertEqual(dependencies.repair_image_edit_provider.config.role, "repair_edit_model")
         self.assertEqual(dependencies.preview_similarity_threshold, 0.87)
         self.assertEqual(dependencies.provider_timeout_seconds, 77)
@@ -575,7 +588,9 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
             for raised, expected_status in ((timeout, 504), (provider_error, 502)):
                 with patch(
                     "api.routes.export._build_vlm_editable_pipeline_dependencies",
-                    lambda config, raised=raised: _fake_vlm_route_dependencies(provider_exception=raised),
+                    lambda config, raised=raised: _fake_vlm_route_dependencies(
+                        provider_exception=raised
+                    ),
                 ):
                     with self.assertRaises(HTTPException) as ctx:
                         asyncio.run(
@@ -679,9 +694,7 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
                 )
 
             self.assertEqual(response.headers["X-Generative-Editable-Status"], "fallback_used")
-            self.assertEqual(
-                response.headers["X-Generative-Editable-Fallback-Used"], "raster_pptx"
-            )
+            self.assertEqual(response.headers["X-Generative-Editable-Fallback-Used"], "raster_pptx")
             asyncio.run(response.background())
         finally:
             asyncio.to_thread = original_to_thread
@@ -725,9 +738,7 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
             presentation = Presentation(str(response.path))
             self.assertEqual(len(presentation.slides), 1)
             self.assertEqual(response.headers["X-Generative-Editable-Status"], "passed")
-            self.assertEqual(
-                response.headers["X-Generative-Editable-Fallback-Policy"], "fail"
-            )
+            self.assertEqual(response.headers["X-Generative-Editable-Fallback-Policy"], "fail")
             asyncio.run(response.background())
             self.assertFalse(Path(response.path).exists())
         finally:
@@ -817,9 +828,12 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
             output_path = Path(tmp) / "out.pptx"
             _write_fake_vlm_source(image_path, size=(800, 600))
 
-            with patch("api.routes.export._export_pptx", fake_raster_export), patch(
-                "api.routes.export._build_vlm_editable_pipeline_dependencies",
-                lambda config: _fake_vlm_route_dependencies(validation_status="failed"),
+            with (
+                patch("api.routes.export._export_pptx", fake_raster_export),
+                patch(
+                    "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                    lambda config: _fake_vlm_route_dependencies(validation_status="failed"),
+                ),
             ):
                 result = export_route._export_generative_editable_pptx(
                     [str(image_path)],
@@ -858,9 +872,12 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
             output_path = Path(tmp) / "out.pptx"
             _write_fake_vlm_source(image_path)
 
-            with patch("api.routes.export._export_pptx", fake_raster_export), patch(
-                "api.routes.export._build_vlm_editable_pipeline_dependencies",
-                lambda config: _fake_vlm_route_dependencies(provider_exception=provider_error),
+            with (
+                patch("api.routes.export._export_pptx", fake_raster_export),
+                patch(
+                    "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                    lambda config: _fake_vlm_route_dependencies(provider_exception=provider_error),
+                ),
             ):
                 result = export_route._export_generative_editable_pptx(
                     [str(image_path)],

@@ -91,7 +91,8 @@ def _build_default_assets(**kwargs) -> "AssetBuildResult":
     candidates = [
         candidate
         for candidate in kwargs["candidates"]
-        if candidate.classification in {"bitmap_asset_candidate", "complex_whole_visual", "uncertain"}
+        if candidate.classification
+        in {"bitmap_asset_candidate", "complex_whole_visual", "uncertain"}
     ]
     if not candidates:
         return AssetBuildResult(bitmap_assets=[])
@@ -100,8 +101,12 @@ def _build_default_assets(**kwargs) -> "AssetBuildResult":
     page_index = int(kwargs["page_index"])
     slide_id = str(kwargs["slide_id"])
     output_dir = Path(kwargs["output_dir"])
-    asset_sheet_provider = kwargs.get("asset_sheet_image_edit_provider", kwargs["image_edit_provider"])
-    asset_reference_image_path = kwargs.get("asset_reference_image_path") or kwargs["source_image_path"]
+    asset_sheet_provider = kwargs.get(
+        "asset_sheet_image_edit_provider", kwargs["image_edit_provider"]
+    )
+    asset_reference_image_path = (
+        kwargs.get("asset_reference_image_path") or kwargs["source_image_path"]
+    )
     background_reference_image_path = kwargs.get("background_reference_image_path")
     allow_source_crop_fallback = bool(kwargs.get("allow_source_crop_fallback", False))
     preserved_candidates = [
@@ -135,7 +140,9 @@ def _build_default_assets(**kwargs) -> "AssetBuildResult":
     asset_sheets: list[AssetSheetSpec] = []
     sheet_results: list[Any] = []
     for batch_index, batch in enumerate(batches, start=1):
-        sheet_filename = "asset-sheet.png" if len(batches) == 1 else f"asset-sheet-{batch_index:03d}.png"
+        sheet_filename = (
+            "asset-sheet.png" if len(batches) == 1 else f"asset-sheet-{batch_index:03d}.png"
+        )
         sheet_path = (
             asset_root
             / "asset_sheets"
@@ -175,11 +182,11 @@ def _build_default_assets(**kwargs) -> "AssetBuildResult":
             )
         try:
             sliced_assets = slice_asset_sheet_by_components(
-                    sheet_path=sheet_result.output_asset_path,
-                    candidates=batch,
-                    output_dir=output_dir,
-                    asset_root=asset_root,
-                )
+                sheet_path=sheet_result.output_asset_path,
+                candidates=batch,
+                output_dir=output_dir,
+                asset_root=asset_root,
+            )
             bitmap_assets.extend(
                 replace(asset, z_order=len(preserved_assets) + asset.z_order)
                 for asset in sliced_assets
@@ -334,9 +341,7 @@ def _build_masked_source_element_assets(
             crop = source_rgba.crop(bbox)
             preserve_whole_visual = _should_preserve_whole_visual_source_crop(candidate)
             background_crop = (
-                None
-                if preserve_whole_visual or background is None
-                else background.crop(bbox)
+                None if preserve_whole_visual or background is None else background.crop(bbox)
             )
             crop_mask = None if preserve_whole_visual or mask is None else mask.crop(bbox)
             if background_crop is not None or crop_mask is not None:
@@ -344,19 +349,27 @@ def _build_masked_source_element_assets(
             smooth_difference_suppressed = False
             pre_suppression_crop = crop.copy()
             pre_suppression_visible_pixel_count = _alpha_visible_pixel_count(pre_suppression_crop)
-            if background_crop is not None and _should_suppress_smooth_background_difference(candidate):
+            if background_crop is not None and _should_suppress_smooth_background_difference(
+                candidate
+            ):
                 smooth_difference_suppressed = _suppress_smooth_background_difference_alpha(crop)
-                if smooth_difference_suppressed and _smooth_suppression_collapsed_to_fragment(
-                    before_visible_pixel_count=pre_suppression_visible_pixel_count,
-                    after_visible_pixel_count=_alpha_visible_pixel_count(crop),
-                ) or (
+                if (
                     smooth_difference_suppressed
-                    and _smooth_suppression_lost_domain_row_span(candidate, crop)
+                    and _smooth_suppression_collapsed_to_fragment(
+                        before_visible_pixel_count=pre_suppression_visible_pixel_count,
+                        after_visible_pixel_count=_alpha_visible_pixel_count(crop),
+                    )
+                    or (
+                        smooth_difference_suppressed
+                        and _smooth_suppression_lost_domain_row_span(candidate, crop)
+                    )
                 ):
                     crop = pre_suppression_crop
                     smooth_difference_suppressed = False
             edge_alpha_feathered = False
-            if background_crop is not None and _should_feather_source_preserved_asset_edges(crop, source_size):
+            if background_crop is not None and _should_feather_source_preserved_asset_edges(
+                crop, source_size
+            ):
                 edge_alpha_feathered = _feather_outer_alpha_edges(crop)
             crop, bbox, trimmed_transparent_bounds = _trim_crop_to_visible_alpha(crop, bbox)
             visible_pixel_count = _alpha_visible_pixel_count(crop)
@@ -379,7 +392,9 @@ def _build_masked_source_element_assets(
                         "edge_alpha_feathered": edge_alpha_feathered,
                         "trimmed_transparent_bounds": trimmed_transparent_bounds,
                         "alpha_visible_pixel_count": visible_pixel_count,
-                        "alpha_visible_area_ratio": round(visible_pixel_count / float(source_area), 6),
+                        "alpha_visible_area_ratio": round(
+                            visible_pixel_count / float(source_area), 6
+                        ),
                         "candidate_provenance": _as_dict(candidate.provenance),
                     },
                 )
@@ -398,12 +413,9 @@ def _should_preserve_whole_visual_source_crop(candidate: ForegroundCandidate) ->
     }:
         return False
     original_detection = provenance.get("original_detection")
-    if (
-        provenance.get("detection") == "source_base_difference"
-        or (
-            isinstance(original_detection, dict)
-            and original_detection.get("detection") == "source_base_difference"
-        )
+    if provenance.get("detection") == "source_base_difference" or (
+        isinstance(original_detection, dict)
+        and original_detection.get("detection") == "source_base_difference"
     ):
         return False
     return (
@@ -461,7 +473,10 @@ def _apply_source_element_alpha(
                 continue
             if background_pixels is None:
                 continue
-            if _color_distance((red, green, blue), background_pixels[x, y]) <= background_delta_threshold:
+            if (
+                _color_distance((red, green, blue), background_pixels[x, y])
+                <= background_delta_threshold
+            ):
                 crop_pixels[x, y] = (red, green, blue, 0)
             elif alpha != 255:
                 crop_pixels[x, y] = (red, green, blue, 255)
@@ -529,7 +544,9 @@ def _feather_outer_alpha_edges(
             distance_to_edge = min(x, y, alpha.width - 1 - x, alpha.height - 1 - y)
             if distance_to_edge >= edge_width:
                 continue
-            edge_factor = min_edge_alpha + int((255 - min_edge_alpha) * (distance_to_edge / float(edge_width)))
+            edge_factor = min_edge_alpha + int(
+                (255 - min_edge_alpha) * (distance_to_edge / float(edge_width))
+            )
             new_alpha = max(1, min(current, (current * edge_factor) // 255))
             if new_alpha != current:
                 alpha_pixels[x, y] = new_alpha
@@ -566,16 +583,13 @@ def _suppress_smooth_background_difference_alpha(
                 abs(red - right[0]) + abs(green - right[1]) + abs(blue - right[2]),
                 abs(red - down[0]) + abs(green - down[1]) + abs(blue - down[2]),
             )
-            if luminance >= bright_threshold or (gradient >= edge_threshold and luminance >= bright_threshold - 16):
+            if luminance >= bright_threshold or (
+                gradient >= edge_threshold and luminance >= bright_threshold - 16
+            ):
                 salient_pixels[x, y] = 255
     dilated = salient.filter(ImageFilter.MaxFilter(15))
     dilated_pixels = dilated.load()
-    edge_points = {
-        (x, y)
-        for y in range(height)
-        for x in range(width)
-        if dilated_pixels[x, y] > 0
-    }
+    edge_points = {(x, y) for y in range(height) for x in range(width) if dilated_pixels[x, y] > 0}
     components = _source_connected_components(edge_points)
     if not components:
         return False
@@ -597,8 +611,12 @@ def _suppress_smooth_background_difference_alpha(
         bbox_area = max(1, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]))
         if bbox_area / float(crop_area) >= max_component_area_ratio:
             continue
-        touches_crop_edge = bbox[0] <= 1 or bbox[1] <= 1 or bbox[2] >= width - 1 or bbox[3] >= height - 1
-        spans_crop_edge = (bbox[2] - bbox[0]) >= width * 0.72 or (bbox[3] - bbox[1]) >= height * 0.72
+        touches_crop_edge = (
+            bbox[0] <= 1 or bbox[1] <= 1 or bbox[2] >= width - 1 or bbox[3] >= height - 1
+        )
+        spans_crop_edge = (bbox[2] - bbox[0]) >= width * 0.72 or (
+            bbox[3] - bbox[1]
+        ) >= height * 0.72
         if touches_crop_edge and spans_crop_edge:
             continue
         keep_draw.rectangle(bbox, fill=255)
@@ -625,7 +643,9 @@ def _load_optional_background_reference(
     return Image.open(path).convert("RGB").resize(source_size)
 
 
-def _load_optional_text_mask(text_mask_path: str | Path | None, source_size: tuple[int, int]) -> Image.Image | None:
+def _load_optional_text_mask(
+    text_mask_path: str | Path | None, source_size: tuple[int, int]
+) -> Image.Image | None:
     if text_mask_path is None:
         return None
     path = Path(text_mask_path)
@@ -661,7 +681,9 @@ def _candidate_batches(
 def _default_preview_validator(**kwargs) -> ValidationReport:
     if kwargs.get("require_preview_validation") is False:
         return ValidationReport(status="passed", checked_pages=1, issues=[])
-    gates = quality_threshold_to_preview_gates(float(kwargs.get("preview_similarity_threshold", 0.92)))
+    gates = quality_threshold_to_preview_gates(
+        float(kwargs.get("preview_similarity_threshold", 0.92))
+    )
     return validate_preview_similarity(
         source_image_path=kwargs["source_image_path"],
         preview=kwargs["preview"],
@@ -771,7 +793,9 @@ def apply_asset_repair_results(
     repair_attempts: list[RepairAttempt],
 ) -> PageManifest:
     existing_ids = {asset.asset_id for asset in page_manifest.bitmap_assets}
-    unknown_ids = [asset.asset_id for asset in repaired_assets if asset.asset_id not in existing_ids]
+    unknown_ids = [
+        asset.asset_id for asset in repaired_assets if asset.asset_id not in existing_ids
+    ]
     if unknown_ids:
         raise ValueError(f"unknown repaired asset ids: {', '.join(sorted(unknown_ids))}")
     repaired_by_id = {asset.asset_id: asset for asset in repaired_assets}
@@ -878,7 +902,9 @@ def with_provider_retries(
         dependencies,
         ocr_provider=ocr_provider,
         image_edit_provider=retry_image_edit(dependencies.image_edit_provider),
-        asset_sheet_image_edit_provider=retry_image_edit(dependencies.asset_sheet_image_edit_provider),
+        asset_sheet_image_edit_provider=retry_image_edit(
+            dependencies.asset_sheet_image_edit_provider
+        ),
         repair_image_edit_provider=retry_image_edit(dependencies.repair_image_edit_provider),
         image_generation_provider=image_generation_provider,
     )
@@ -905,7 +931,8 @@ def run_generative_editable_pipeline(
     retry_dependencies = with_provider_retries(dependencies)
     effective_dependencies = replace(
         retry_dependencies,
-        allow_metadata_ocr_fallback=retry_dependencies.allow_metadata_ocr_fallback and policy != "fail",
+        allow_metadata_ocr_fallback=retry_dependencies.allow_metadata_ocr_fallback
+        and policy != "fail",
         allow_source_crop_asset_fallback=retry_dependencies.allow_source_crop_asset_fallback,
     )
     try:
@@ -998,7 +1025,9 @@ def _run_generative_editable_pipeline_impl(
                 page_index=page_index,
                 slide_id=page_manifest.slide_id,
             ):
-                page_manifest_path = artifacts.page_manifest_path(page_manifest.slide_id, page_index)
+                page_manifest_path = artifacts.page_manifest_path(
+                    page_manifest.slide_id, page_index
+                )
                 write_manifest(page_manifest_path, page_manifest)
             page_manifest_refs.append(_job_relative(page_manifest_path, artifacts.job_dir))
 
@@ -1190,7 +1219,7 @@ def _build_one_slide_manifest(
             ),
             ignored_noise_candidates=ignored_visual_text_candidates,
             min_confidence=dependencies.ocr_min_confidence,
-    )
+        )
     if recovered_text_boxes:
         text_boxes = _remove_approximate_text_boxes_replaced_by_focused_recovery(
             text_boxes,
@@ -1339,9 +1368,7 @@ def _build_one_slide_manifest(
             source_image_path=str(source_path),
             text_boxes=source_raster_anchor_text_boxes,
             output_dir=(
-                artifacts.job_dir
-                / "assets"
-                / f"{page_index:04d}-{_safe_name(slide.slide_id)}"
+                artifacts.job_dir / "assets" / f"{page_index:04d}-{_safe_name(slide.slide_id)}"
             ),
             asset_root=artifacts.job_dir,
             start_z_order=1,
@@ -1411,9 +1438,7 @@ def _build_one_slide_manifest(
         )
         provenance = dict(page.provenance)
         backgrounds = dict(provenance.get("backgrounds", {}))
-        backgrounds["source_raster"] = _background_result_manifest_record(
-            source_raster_background
-        )
+        backgrounds["source_raster"] = _background_result_manifest_record(source_raster_background)
         provenance["backgrounds"] = backgrounds
         provenance["chosen_background_kind"] = "source_raster_guardrail"
         return replace(page, provenance=provenance)
@@ -1515,9 +1540,7 @@ def _build_one_slide_manifest(
                 background_reference_image_path=base_clean.output_asset_path,
                 candidates=bitmap_candidates,
                 output_dir=str(
-                    artifacts.job_dir
-                    / "assets"
-                    / f"{page_index:04d}-{_safe_name(slide.slide_id)}"
+                    artifacts.job_dir / "assets" / f"{page_index:04d}-{_safe_name(slide.slide_id)}"
                 ),
                 asset_root=str(artifacts.job_dir),
                 image_generation_provider=dependencies.image_generation_provider,
@@ -1596,9 +1619,7 @@ def _build_one_slide_manifest(
                 source_image_path=str(source_path),
                 text_boxes=text_boxes,
                 output_dir=(
-                    artifacts.job_dir
-                    / "assets"
-                    / f"{page_index:04d}-{_safe_name(slide.slide_id)}"
+                    artifacts.job_dir / "assets" / f"{page_index:04d}-{_safe_name(slide.slide_id)}"
                 ),
                 asset_root=artifacts.job_dir,
                 start_z_order=1,
@@ -1834,9 +1855,7 @@ def _validate_pipeline_output(
         )
         reports.extend(page_reports)
         page_failed = any(report.status != "passed" or report.issues for report in page_reports)
-        page_statuses[page.slide_id] = (
-            "failed" if structure_failed or page_failed else "passed"
-        )
+        page_statuses[page.slide_id] = "failed" if structure_failed or page_failed else "passed"
     return _merge_validation_reports(reports, checked_pages=len(page_manifests)), page_statuses
 
 
@@ -1934,7 +1953,8 @@ def _repair_or_replace_provider_asset_mismatches(
         repairable_failed_assets = [
             asset
             for asset in failed_assets
-            if max_repair_attempts > 0 and _should_repair_asset(failure_reasons.get(asset.asset_id, []))
+            if max_repair_attempts > 0
+            and _should_repair_asset(failure_reasons.get(asset.asset_id, []))
         ]
         try:
             if repairable_failed_assets:
@@ -1973,10 +1993,7 @@ def _repair_or_replace_provider_asset_mismatches(
                 raise ProviderError(
                     provider_role=repair_provider.config.role,
                     operation="asset_quality",
-                    message=(
-                        f"asset quality failed for {asset.asset_id}: "
-                        + ",".join(qa_reasons)
-                    ),
+                    message=(f"asset quality failed for {asset.asset_id}: " + ",".join(qa_reasons)),
                     retryable=False,
                 )
             replaced.append(
@@ -2065,7 +2082,9 @@ def _plan_reconstruction_targets(
         source_size = source.size
         source_rgb = source.convert("RGB").copy()
     source_background = _estimate_background_color(source_rgb)
-    for candidate in _reclassify_uncertain_candidates(candidates, source_image_path=source_image_path):
+    for candidate in _reclassify_uncertain_candidates(
+        candidates, source_image_path=source_image_path
+    ):
         fit = fit_native_shape_with_fallback(
             candidate,
             source_image_path=source_image_path,
@@ -2083,7 +2102,11 @@ def _plan_reconstruction_targets(
         if fit.bitmap_candidate is not None:
             bitmap_candidates.append(fit.bitmap_candidate)
             continue
-        if candidate.classification in {"bitmap_asset_candidate", "complex_whole_visual", "uncertain"}:
+        if candidate.classification in {
+            "bitmap_asset_candidate",
+            "complex_whole_visual",
+            "uncertain",
+        }:
             bitmap_candidates.append(candidate)
     native_shapes = _drop_source_diff_native_fill_residuals(
         _native_shapes_with_source_scan_priority(native_shapes),
@@ -2144,7 +2167,9 @@ def _promote_large_card_containers_to_native_shapes(
         )
     ]
     selected: list[ForegroundCandidate] = []
-    for candidate in sorted(eligible, key=lambda item: _bbox_area_pixels(item.source_pixel_bbox), reverse=True):
+    for candidate in sorted(
+        eligible, key=lambda item: _bbox_area_pixels(item.source_pixel_bbox), reverse=True
+    ):
         if any(
             _bbox_contains_ratio(parent.source_pixel_bbox, candidate.source_pixel_bbox) >= 0.85
             for parent in selected
@@ -2163,7 +2188,14 @@ def _promote_large_card_containers_to_native_shapes(
                 line_color="#1D4ED8",
                 stroke_width=max(1.0, min(source_size) * 0.002),
                 opacity=0.78,
-                radius=max(8.0, min(candidate.source_pixel_bbox[2] - candidate.source_pixel_bbox[0], candidate.source_pixel_bbox[3] - candidate.source_pixel_bbox[1]) * 0.04),
+                radius=max(
+                    8.0,
+                    min(
+                        candidate.source_pixel_bbox[2] - candidate.source_pixel_bbox[0],
+                        candidate.source_pixel_bbox[3] - candidate.source_pixel_bbox[1],
+                    )
+                    * 0.04,
+                ),
                 confidence=max(candidate.confidence, 0.72),
                 provenance={
                     **_as_dict(candidate.provenance),
@@ -2176,7 +2208,9 @@ def _promote_large_card_containers_to_native_shapes(
         promoted_ids.add(candidate.candidate_id)
     if not promoted:
         return [], candidates
-    return promoted, [candidate for candidate in candidates if candidate.candidate_id not in promoted_ids]
+    return promoted, [
+        candidate for candidate in candidates if candidate.candidate_id not in promoted_ids
+    ]
 
 
 def _is_large_card_container_candidate(
@@ -2188,7 +2222,11 @@ def _is_large_card_container_candidate(
     native_shapes: list[NativeShapeSpec],
     min_child_count: int = 2,
 ) -> bool:
-    if candidate.classification not in {"complex_whole_visual", "bitmap_asset_candidate", "uncertain"}:
+    if candidate.classification not in {
+        "complex_whole_visual",
+        "bitmap_asset_candidate",
+        "uncertain",
+    }:
         return False
     if not _is_source_base_difference_candidate(candidate):
         return False
@@ -2201,7 +2239,9 @@ def _is_large_card_container_candidate(
         return False
     if not (0.25 <= width_ratio <= 0.78 and 0.35 <= height_ratio <= 0.78):
         return False
-    if bbox[0] <= round(source_size[0] * 0.015) or bbox[2] >= source_size[0] - round(source_size[0] * 0.015):
+    if bbox[0] <= round(source_size[0] * 0.015) or bbox[2] >= source_size[0] - round(
+        source_size[0] * 0.015
+    ):
         return False
     if not _large_card_container_has_outline_signal(source_image, bbox):
         return False
@@ -2213,13 +2253,15 @@ def _is_large_card_container_candidate(
         if other.candidate_id != candidate.candidate_id
         and other.classification in {"complex_whole_visual", "bitmap_asset_candidate", "uncertain"}
         and _bbox_contains_ratio(candidate.source_pixel_bbox, other.source_pixel_bbox) >= 0.85
-        and _bbox_area_pixels(other.source_pixel_bbox) <= _bbox_area_pixels(candidate.source_pixel_bbox) * 0.45
+        and _bbox_area_pixels(other.source_pixel_bbox)
+        <= _bbox_area_pixels(candidate.source_pixel_bbox) * 0.45
     ]
     contained_native_shapes = [
         shape
         for shape in native_shapes
         if _bbox_contains_ratio(candidate.source_pixel_bbox, shape.source_pixel_bbox) >= 0.85
-        and _bbox_area_pixels(shape.source_pixel_bbox) <= _bbox_area_pixels(candidate.source_pixel_bbox) * 0.45
+        and _bbox_area_pixels(shape.source_pixel_bbox)
+        <= _bbox_area_pixels(candidate.source_pixel_bbox) * 0.45
     ]
     return len(contained_children) + len(contained_native_shapes) >= min_child_count
 
@@ -2241,7 +2283,9 @@ def _large_card_container_has_outline_signal(
     vertical_bottom = min(image.height, bottom + search)
     edge_found = [
         _scan_horizontal_card_outline(image, horizontal_left, horizontal_right, top, search, strip),
-        _scan_horizontal_card_outline(image, horizontal_left, horizontal_right, bottom, search, strip),
+        _scan_horizontal_card_outline(
+            image, horizontal_left, horizontal_right, bottom, search, strip
+        ),
         _scan_vertical_card_outline(image, vertical_top, vertical_bottom, left, search, strip),
         _scan_vertical_card_outline(image, vertical_top, vertical_bottom, right, search, strip),
     ]
@@ -2292,7 +2336,9 @@ def _bbox_has_card_outline_signal(
         (left, top, left + strip, bottom),
         (right - strip, top, right, bottom),
     ]
-    return sum(_edge_region_has_coherent_card_outline(image, region) for region in edge_regions) >= 2
+    return (
+        sum(_edge_region_has_coherent_card_outline(image, region) for region in edge_regions) >= 2
+    )
 
 
 def _edge_region_has_coherent_card_outline(
@@ -2452,7 +2498,11 @@ def _should_split_edge_spanning_bitmap_candidate(
     candidate: ForegroundCandidate,
     source_size: tuple[int, int],
 ) -> bool:
-    if candidate.classification not in {"complex_whole_visual", "bitmap_asset_candidate", "uncertain"}:
+    if candidate.classification not in {
+        "complex_whole_visual",
+        "bitmap_asset_candidate",
+        "uncertain",
+    }:
         return False
     if not _is_source_base_difference_candidate(candidate):
         return False
@@ -2462,14 +2512,23 @@ def _should_split_edge_spanning_bitmap_candidate(
     area_ratio = _bbox_area_pixels(bbox) / float(max(1, source_size[0] * source_size[1]))
     edge_margin = max(4, round(min(source_size) * 0.01))
     spans_horizontal_edges = bbox[0] <= edge_margin and bbox[2] >= source_size[0] - edge_margin
-    return spans_horizontal_edges and width_ratio >= 0.90 and height_ratio >= 0.35 and area_ratio >= 0.18
+    return (
+        spans_horizontal_edges
+        and width_ratio >= 0.90
+        and height_ratio >= 0.35
+        and area_ratio >= 0.18
+    )
 
 
 def _should_split_large_layered_bitmap_candidate(
     candidate: ForegroundCandidate,
     source_size: tuple[int, int],
 ) -> bool:
-    if candidate.classification not in {"complex_whole_visual", "bitmap_asset_candidate", "uncertain"}:
+    if candidate.classification not in {
+        "complex_whole_visual",
+        "bitmap_asset_candidate",
+        "uncertain",
+    }:
         return False
     if not _is_source_base_difference_candidate(candidate):
         return False
@@ -2493,7 +2552,9 @@ def _drop_nested_bitmap_fragments(
 ) -> list[ForegroundCandidate]:
     kept: list[ForegroundCandidate] = []
     for candidate in candidates:
-        if any(_bitmap_candidate_contains_fragment(container, candidate) for container in candidates):
+        if any(
+            _bitmap_candidate_contains_fragment(container, candidate) for container in candidates
+        ):
             continue
         kept.append(candidate)
     return kept
@@ -2525,7 +2586,11 @@ def _bitmap_candidate_contains_fragment(
         return False
     if container.classification not in {"complex_whole_visual", "bitmap_asset_candidate"}:
         return False
-    if fragment.classification not in {"complex_whole_visual", "bitmap_asset_candidate", "uncertain"}:
+    if fragment.classification not in {
+        "complex_whole_visual",
+        "bitmap_asset_candidate",
+        "uncertain",
+    }:
         return False
     container_area = _bbox_area_pixels(container.source_pixel_bbox)
     fragment_area = _bbox_area_pixels(fragment.source_pixel_bbox)
@@ -2584,13 +2649,20 @@ def _bitmap_fragments_should_merge(
     if _box_distance_pixels(left.source_pixel_bbox, right.source_pixel_bbox) > max_gap:
         return False
     union = _union_bbox(left.source_pixel_bbox, right.source_pixel_bbox)
-    if _bbox_area_pixels(union) / float(max(1, source_size[0] * source_size[1])) > max_merged_page_area_ratio:
+    if (
+        _bbox_area_pixels(union) / float(max(1, source_size[0] * source_size[1]))
+        > max_merged_page_area_ratio
+    ):
         return False
-    separate_area = _bbox_area_pixels(left.source_pixel_bbox) + _bbox_area_pixels(right.source_pixel_bbox)
+    separate_area = _bbox_area_pixels(left.source_pixel_bbox) + _bbox_area_pixels(
+        right.source_pixel_bbox
+    )
     return _bbox_area_pixels(union) / float(max(1, separate_area)) <= max_union_growth
 
 
-def _merged_bitmap_candidate(left: ForegroundCandidate, right: ForegroundCandidate) -> ForegroundCandidate:
+def _merged_bitmap_candidate(
+    left: ForegroundCandidate, right: ForegroundCandidate
+) -> ForegroundCandidate:
     merged_ids = [
         *_as_dict(left.provenance).get("merged_candidate_ids", [left.candidate_id]),
         *_as_dict(right.provenance).get("merged_candidate_ids", [right.candidate_id]),
@@ -2773,7 +2845,10 @@ def _source_foreground_pixels(
             if text_mask is not None and text_mask.getpixel((x, y)) > 0:
                 continue
             red, green, blue = image.getpixel((x, y))
-            if max(abs(red - background[0]), abs(green - background[1]), abs(blue - background[2])) > threshold:
+            if (
+                max(abs(red - background[0]), abs(green - background[1]), abs(blue - background[2]))
+                > threshold
+            ):
                 pixels.add((x, y))
     return pixels
 
@@ -2802,7 +2877,9 @@ def _source_connected_components(pixels: set[tuple[int, int]]) -> list[list[tupl
                     stack.append(neighbor)
                     component.append(neighbor)
         components.append(component)
-    components.sort(key=lambda item: (min(point[1] for point in item), min(point[0] for point in item)))
+    components.sort(
+        key=lambda item: (min(point[1] for point in item), min(point[0] for point in item))
+    )
     return components
 
 
@@ -2964,7 +3041,8 @@ def _drop_text_boxes_covered_by_complex_bitmap_assets(
             (
                 asset.source_pixel_bbox
                 for asset in complex_assets
-                if _bbox_contains_ratio(asset.source_pixel_bbox, text_box.source_pixel_bbox) >= min_cover_ratio
+                if _bbox_contains_ratio(asset.source_pixel_bbox, text_box.source_pixel_bbox)
+                >= min_cover_ratio
                 and (
                     _text_box_has_approximate_ocr_layout(text_box)
                     or _is_opaque_complex_bitmap_asset(asset)
@@ -3016,9 +3094,7 @@ def _drop_native_shapes_covered_by_complex_bitmap_assets(
     min_cover_ratio: float = 0.85,
 ) -> list[NativeShapeSpec]:
     complex_asset_bboxes = [
-        asset.source_pixel_bbox
-        for asset in bitmap_assets
-        if _is_opaque_complex_bitmap_asset(asset)
+        asset.source_pixel_bbox for asset in bitmap_assets if _is_opaque_complex_bitmap_asset(asset)
     ]
     if not complex_asset_bboxes:
         return native_shapes
@@ -3215,7 +3291,10 @@ def _augment_bitmap_candidates_with_generic_visual_anchors(
         *[
             bbox
             for bbox in row_bboxes
-            if not any(_bbox_iou(bbox, generic) >= 0.55 for generic in [*cover_lower_bboxes, *generic_bboxes])
+            if not any(
+                _bbox_iou(bbox, generic) >= 0.55
+                for generic in [*cover_lower_bboxes, *generic_bboxes]
+            )
         ],
     ]
     if not anchor_bboxes:
@@ -3224,7 +3303,10 @@ def _augment_bitmap_candidates_with_generic_visual_anchors(
     for index, bbox in enumerate(anchor_bboxes, start=1):
         if any(_bbox_iou(bbox, candidate.source_pixel_bbox) >= 0.55 for candidate in augmented):
             continue
-        if any(_bbox_contains_ratio(candidate.source_pixel_bbox, bbox) >= 0.85 for candidate in augmented):
+        if any(
+            _bbox_contains_ratio(candidate.source_pixel_bbox, bbox) >= 0.85
+            for candidate in augmented
+        ):
             continue
         augmented.append(
             ForegroundCandidate(
@@ -3480,7 +3562,10 @@ def _create_local_reconstruction_background(
         )
         footer_top = _footer_top(source_rgb.size)
         if footer_top < source_rgb.height:
-            background.paste(source_rgb.crop((0, footer_top, source_rgb.width, source_rgb.height)), (0, footer_top))
+            background.paste(
+                source_rgb.crop((0, footer_top, source_rgb.width, source_rgb.height)),
+                (0, footer_top),
+            )
         background.save(output_path)
     return BackgroundResult(
         output_asset_path=str(output_path),
@@ -3541,7 +3626,9 @@ def _sample_flat_background_pixels(
     pixels = image.load()
     for y in range(inset, max(inset, footer_top - inset), step_y):
         for x in range(inset, max(inset, image.width - inset), step_x):
-            if any(_point_inside_padded_bbox((x, y), bbox, padding=4) for bbox in foreground_bboxes):
+            if any(
+                _point_inside_padded_bbox((x, y), bbox, padding=4) for bbox in foreground_bboxes
+            ):
                 continue
             samples.append(pixels[x, y])
     return samples
@@ -3597,16 +3684,12 @@ def _should_drop_bitmap_candidate(
         native_shapes=native_shapes,
     ):
         return True
-    if (
-        native_shapes
-        and _bbox_area_pixels(bbox) / float(source_size[0] * source_size[1]) >= 0.80
-    ):
+    if native_shapes and _bbox_area_pixels(bbox) / float(source_size[0] * source_size[1]) >= 0.80:
         return True
     if _bbox_overlaps_any_shape(bbox, native_shapes):
         return True
-    if (
-        _is_source_base_difference_candidate(candidate)
-        and not _source_region_has_foreground_signal(source_image, bbox, source_background)
+    if _is_source_base_difference_candidate(candidate) and not _source_region_has_foreground_signal(
+        source_image, bbox, source_background
     ):
         return True
     if _tiny_diff_fragment(candidate):
@@ -3635,7 +3718,11 @@ def _is_structural_container_bitmap_candidate(
 ) -> bool:
     if not native_shapes:
         return False
-    if candidate.classification not in {"complex_whole_visual", "bitmap_asset_candidate", "uncertain"}:
+    if candidate.classification not in {
+        "complex_whole_visual",
+        "bitmap_asset_candidate",
+        "uncertain",
+    }:
         return False
     if not _is_source_base_difference_candidate(candidate):
         return False
@@ -3663,12 +3750,12 @@ def _is_structural_container_bitmap_candidate(
     return child_area_in_page / float(candidate_area) >= min_child_coverage_ratio
 
 
-def _native_shapes_with_source_scan_priority(shapes: list[NativeShapeSpec]) -> list[NativeShapeSpec]:
+def _native_shapes_with_source_scan_priority(
+    shapes: list[NativeShapeSpec],
+) -> list[NativeShapeSpec]:
     return sorted(
         shapes,
-        key=lambda shape: (
-            0 if _is_source_native_shape(shape) else 1,
-        ),
+        key=lambda shape: (0 if _is_source_native_shape(shape) else 1,),
     )
 
 
@@ -3677,11 +3764,7 @@ def _drop_source_diff_native_fill_residuals(
     *,
     source_image: Image.Image,
 ) -> list[NativeShapeSpec]:
-    source_scan_shapes = [
-        shape
-        for shape in shapes
-        if _is_source_native_shape(shape)
-    ]
+    source_scan_shapes = [shape for shape in shapes if _is_source_native_shape(shape)]
     if not source_scan_shapes:
         return shapes
     filtered: list[NativeShapeSpec] = []
@@ -3704,9 +3787,11 @@ def _is_source_diff_native_fill_residual(
             continue
         if not _bbox_contains(container.source_pixel_bbox, shape.source_pixel_bbox):
             continue
-        if _bbox_area_pixels(shape.source_pixel_bbox) / float(
-            max(1, _bbox_area_pixels(container.source_pixel_bbox))
-        ) > 0.10:
+        if (
+            _bbox_area_pixels(shape.source_pixel_bbox)
+            / float(max(1, _bbox_area_pixels(container.source_pixel_bbox)))
+            > 0.10
+        ):
             continue
         fill_rgb = _hex_color_to_rgb(container.fill_color)
         if fill_rgb is None:
@@ -3759,7 +3844,11 @@ def _tiny_diff_fragment(candidate: ForegroundCandidate) -> bool:
     bbox = candidate.source_pixel_bbox
     width = max(0, bbox[2] - bbox[0])
     height = max(0, bbox[3] - bbox[1])
-    if candidate.classification not in {"uncertain", "complex_whole_visual", "bitmap_asset_candidate"}:
+    if candidate.classification not in {
+        "uncertain",
+        "complex_whole_visual",
+        "bitmap_asset_candidate",
+    }:
         return False
     return _bbox_area_pixels(bbox) <= 500 or max(width, height) <= 24
 
@@ -3767,7 +3856,11 @@ def _tiny_diff_fragment(candidate: ForegroundCandidate) -> bool:
 def _line_like_bitmap_residual(candidate: ForegroundCandidate) -> bool:
     if not _is_source_base_difference_candidate(candidate):
         return False
-    if candidate.classification not in {"complex_whole_visual", "bitmap_asset_candidate", "uncertain"}:
+    if candidate.classification not in {
+        "complex_whole_visual",
+        "bitmap_asset_candidate",
+        "uncertain",
+    }:
         return False
     bbox = candidate.source_pixel_bbox
     width = max(1, bbox[2] - bbox[0])
@@ -4003,7 +4096,9 @@ def _source_component_is_box_outline(
     )
 
 
-def _source_line_endpoints(component: list[tuple[int, int]]) -> tuple[tuple[int, int], tuple[int, int]]:
+def _source_line_endpoints(
+    component: list[tuple[int, int]],
+) -> tuple[tuple[int, int], tuple[int, int]]:
     points = sorted(component)
     first = min(points, key=lambda point: point[0] + point[1])
     second = max(points, key=lambda point: point[0] + point[1])
@@ -4063,7 +4158,11 @@ def _repair_validation_report(page: PageManifest) -> ValidationReport:
             continue
         if attempt.target_id in fallback_asset_ids:
             continue
-        code = "repair_limit_exceeded" if attempt.reason.startswith("repair_limit_exceeded") else "repair_failed"
+        code = (
+            "repair_limit_exceeded"
+            if attempt.reason.startswith("repair_limit_exceeded")
+            else "repair_failed"
+        )
         issues.append(
             ValidationIssue(
                 code=code,
@@ -4141,11 +4240,15 @@ def _bitmap_coverage_validation_report(page: PageManifest) -> ValidationReport:
     page_area = max(1, page.source_image_size[0] * page.source_image_size[1])
     largest_asset = max(
         source_preserved_assets,
-        key=lambda asset: _source_preserved_asset_effective_area_ratio(asset, page.source_image_size),
+        key=lambda asset: _source_preserved_asset_effective_area_ratio(
+            asset, page.source_image_size
+        ),
     )
     largest_bbox = _clamp_bbox_to_size(largest_asset.source_pixel_bbox, page.source_image_size)
     largest_bbox_ratio = _bbox_area_pixels(largest_bbox) / float(page_area)
-    largest_ratio = _source_preserved_asset_effective_area_ratio(largest_asset, page.source_image_size)
+    largest_ratio = _source_preserved_asset_effective_area_ratio(
+        largest_asset, page.source_image_size
+    )
     combined_bbox_ratio = _bbox_coverage_ratio(
         [asset.source_pixel_bbox for asset in source_preserved_assets],
         page.source_image_size,
@@ -4235,14 +4338,10 @@ def _has_split_row_level_bitmap_structure(
     structure_count: int,
 ) -> bool:
     split_row_structure = (
-        len(source_preserved_assets) >= 3
-        and largest_ratio <= 0.35
-        and structure_count >= 3
+        len(source_preserved_assets) >= 3 and largest_ratio <= 0.35 and structure_count >= 3
     )
     dense_infographic_structure = (
-        len(source_preserved_assets) >= 3
-        and largest_ratio <= 0.60
-        and structure_count >= 12
+        len(source_preserved_assets) >= 3 and largest_ratio <= 0.60 and structure_count >= 12
     )
     return split_row_structure or dense_infographic_structure
 
@@ -4259,7 +4358,10 @@ def _visual_text_coverage_issues(
     for candidate_bbox in visual_text_candidates:
         if candidate_bbox in non_blocking:
             continue
-        if any(_text_box_covers_visual_candidate(text_bbox, candidate_bbox) for text_bbox in covered_boxes):
+        if any(
+            _text_box_covers_visual_candidate(text_bbox, candidate_bbox)
+            for text_bbox in covered_boxes
+        ):
             continue
         issues.append(
             {
@@ -4359,14 +4461,14 @@ def _has_summary_like_visual_text_candidate_pattern(
         for bbox in visual_text_candidates
     )
     has_bottom_helper_or_qr_line = any(
-        bbox[0] >= width * 0.72
-        and bbox[1] >= height * 0.72
-        for bbox in visual_text_candidates
+        bbox[0] >= width * 0.72 and bbox[1] >= height * 0.72 for bbox in visual_text_candidates
     )
     return has_upper_summary_line and has_body_line and has_bottom_helper_or_qr_line
 
 
-def _summary_slide_recovery_bboxes(source_image_size: tuple[int, int]) -> list[tuple[int, int, int, int]]:
+def _summary_slide_recovery_bboxes(
+    source_image_size: tuple[int, int],
+) -> list[tuple[int, int, int, int]]:
     width, height = source_image_size
     return [
         (round(width * 0.28), round(height * 0.22), round(width * 0.72), round(height * 0.29)),
@@ -4464,7 +4566,8 @@ def _is_right_side_spec_stack_text_box(
     same_column = [
         other
         for other in stack_boxes
-        if abs(((other.source_pixel_bbox[0] + other.source_pixel_bbox[2]) / 2.0) - center_x) <= width * 0.095
+        if abs(((other.source_pixel_bbox[0] + other.source_pixel_bbox[2]) / 2.0) - center_x)
+        <= width * 0.095
     ]
     if text_box not in same_column:
         return False
@@ -4477,8 +4580,13 @@ def _is_right_side_spec_stack_text_box(
     if len(same_column) >= 4:
         return True
     ordered = sorted(same_column, key=lambda item: item.source_pixel_bbox[1])
-    neighbor_centers = [(item.source_pixel_bbox[1] + item.source_pixel_bbox[3]) / 2.0 for item in ordered]
-    return len(neighbor_centers) >= 3 and max(neighbor_centers) - min(neighbor_centers) <= height * 0.22
+    neighbor_centers = [
+        (item.source_pixel_bbox[1] + item.source_pixel_bbox[3]) / 2.0 for item in ordered
+    ]
+    return (
+        len(neighbor_centers) >= 3
+        and max(neighbor_centers) - min(neighbor_centers) <= height * 0.22
+    )
 
 
 def _right_side_spec_stack_has_visual_column_anchors(
@@ -4583,7 +4691,9 @@ def _visual_candidate_can_anchor_text(
 
 def _is_short_section_label_text(text: str) -> bool:
     stripped = str(text).strip()
-    meaningful = "".join(char for char in stripped if char.isalnum() or "\u3400" <= char <= "\u9fff")
+    meaningful = "".join(
+        char for char in stripped if char.isalnum() or "\u3400" <= char <= "\u9fff"
+    )
     cjk_count = sum(1 for char in meaningful if "\u3400" <= char <= "\u9fff")
     return 2 <= cjk_count <= 5 and meaningful.endswith(("域", "区", "层", "类", "项", "栏"))
 
@@ -4595,9 +4705,7 @@ def _is_large_top_text_box(
 ) -> bool:
     left, top, right, bottom = bbox
     return (
-        top <= image_height * 0.12
-        and (right - left) >= image_width * 0.25
-        and (bottom - top) >= 20
+        top <= image_height * 0.12 and (right - left) >= image_width * 0.25 and (bottom - top) >= 20
     )
 
 
@@ -4732,7 +4840,9 @@ def _is_replaced_by_focused_recovery(
             or recovered_text in original_text
         ):
             continue
-        if _text_box_covers_visual_candidate(text_box.source_pixel_bbox, recovered.source_pixel_bbox):
+        if _text_box_covers_visual_candidate(
+            text_box.source_pixel_bbox, recovered.source_pixel_bbox
+        ):
             return True
         if _approximate_text_box_is_near_focused_recovery(
             text_box.source_pixel_bbox,
@@ -4795,13 +4905,19 @@ def _is_recovered_ocr_noise_text(text: str) -> bool:
     stripped = text.strip()
     if not stripped:
         return True
-    meaningful = [char for char in stripped if not char.isspace() and char not in ".,;:!?，。；：！？、·-—_()（）[]【】{}<>《》/\\|"]
+    meaningful = [
+        char
+        for char in stripped
+        if not char.isspace() and char not in ".,;:!?，。；：！？、·-—_()（）[]【】{}<>《》/\\|"
+    ]
     if not meaningful:
         return True
     unique_meaningful = set(meaningful)
     digit_count = sum(1 for char in meaningful if char.isdigit())
     cjk_count = sum(1 for char in meaningful if "\u3400" <= char <= "\u9fff")
-    alpha_count = sum(1 for char in meaningful if char.isalpha() and not ("\u3400" <= char <= "\u9fff"))
+    alpha_count = sum(
+        1 for char in meaningful if char.isalpha() and not ("\u3400" <= char <= "\u9fff")
+    )
     if cjk_count >= 3 and len(unique_meaningful) <= 2:
         return True
     if "输入文本" in stripped:
@@ -4833,7 +4949,11 @@ def _recovered_ocr_duplicates_existing_text(
         existing_text = _normalize_text_for_duplicate_check(getattr(text_box, "text", ""))
         if not existing_text:
             continue
-        if normalized != existing_text and normalized not in existing_text and existing_text not in normalized:
+        if (
+            normalized != existing_text
+            and normalized not in existing_text
+            and existing_text not in normalized
+        ):
             continue
         existing_bbox = text_box.source_pixel_bbox
         if (
@@ -4846,7 +4966,9 @@ def _recovered_ocr_duplicates_existing_text(
 
 
 def _normalize_text_for_duplicate_check(text: str) -> str:
-    return "".join(char for char in str(text).lower() if char.isalnum() or "\u3400" <= char <= "\u9fff")
+    return "".join(
+        char for char in str(text).lower() if char.isalnum() or "\u3400" <= char <= "\u9fff"
+    )
 
 
 def _recovered_text_box_from_candidate(

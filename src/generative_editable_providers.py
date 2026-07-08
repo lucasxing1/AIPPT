@@ -440,7 +440,9 @@ class OpenAIChatOCRProvider(OCRProvider):
         with Image.open(path) as image:
             width, height = image.size
         image_base64 = base64.b64encode(path.read_bytes()).decode()
-        prompt = _focused_crop_ocr_prompt() if _is_focused_ocr_crop_path(path) else _ocr_json_prompt()
+        prompt = (
+            _focused_crop_ocr_prompt() if _is_focused_ocr_crop_path(path) else _ocr_json_prompt()
+        )
         if _is_paddleocr_vl_model(self.config.model):
             payload = _openai_chat_payload(
                 model=self.config.model,
@@ -673,7 +675,10 @@ def _fake_background_fill_color(image: Image.Image, mask: Image.Image) -> tuple[
             candidates.append(value if isinstance(value, tuple) else (value,))
     if candidates:
         channels = len(candidates[0])
-        return tuple(round(sum(pixel[index] for pixel in candidates) / len(candidates)) for index in range(channels))
+        return tuple(
+            round(sum(pixel[index] for pixel in candidates) / len(candidates))
+            for index in range(channels)
+        )
     value = image.resize((1, 1)).getpixel((0, 0))
     return value if isinstance(value, tuple) else (value,)
 
@@ -1094,10 +1099,7 @@ def _extract_ocr_text_items(
     image_size: tuple[int, int],
 ) -> list[OCRTextItem]:
     try:
-        return [
-            _ocr_text_item_from_payload(item, config)
-            for item in _extract_ocr_items(payload)
-        ]
+        return [_ocr_text_item_from_payload(item, config) for item in _extract_ocr_items(payload)]
     except ProviderError:
         scalar_text = _extract_safe_json_scalar_ocr_text(payload)
         if scalar_text is None:
@@ -1133,10 +1135,10 @@ def _ocr_json_prompt() -> str:
     return (
         "You are an OCR engine for presentation slides. Identify every visible text "
         "span in the attached image. Output JSON only, with no markdown and no prose. "
-        "Schema: {\"items\":[{\"text\":\"...\",\"bbox\":[left,top,right,bottom],"
-        "\"confidence\":0.0,\"font_size\":32,\"color\":\"#RRGGBB\","
-        "\"alignment\":\"left\"}]}. Coordinates must be source-image pixels. "
-        "If there is no visible text, output {\"items\":[]}.\n"
+        'Schema: {"items":[{"text":"...","bbox":[left,top,right,bottom],'
+        '"confidence":0.0,"font_size":32,"color":"#RRGGBB",'
+        '"alignment":"left"}]}. Coordinates must be source-image pixels. '
+        'If there is no visible text, output {"items":[]}.\n'
         "你是演示文稿 OCR 引擎。只输出 JSON，不要解释、不要 Markdown。"
     )
 
@@ -1205,7 +1207,9 @@ def _approximate_line_ocr_items(
                 style_hints={
                     "source": "paddleocr_vl_plain_text",
                     "approximate_layout": True,
-                    "layout_source": "image_projection" if estimate is not None else "uniform_fallback",
+                    "layout_source": "image_projection"
+                    if estimate is not None
+                    else "uniform_fallback",
                 },
                 color_hex=color_hex,
                 provenance={
@@ -1214,7 +1218,9 @@ def _approximate_line_ocr_items(
                     "model": config.model,
                     "item_id": f"paddleocr-vl-line-{index}",
                     "approximate_layout": True,
-                    "layout_source": "image_projection" if estimate is not None else "uniform_fallback",
+                    "layout_source": "image_projection"
+                    if estimate is not None
+                    else "uniform_fallback",
                 },
             )
         )
@@ -1316,7 +1322,7 @@ def _estimate_text_line_layouts_from_components(
     red = array[:, :, 0].astype("int16")
     green = array[:, :, 1].astype("int16")
     blue = array[:, :, 2].astype("int16")
-    luma = (0.299 * red + 0.587 * green + 0.114 * blue)
+    luma = 0.299 * red + 0.587 * green + 0.114 * blue
     saturation = np.maximum.reduce([red, green, blue]) - np.minimum.reduce([red, green, blue])
     masks = [
         (((luma >= 145) & (saturation <= 80)) | (luma >= 215)).astype("uint8"),
@@ -1415,7 +1421,9 @@ def _build_detected_text_lines(
                 _DetectedTextLine(
                     bbox=expanded,
                     color_hex=_dominant_text_color(image, expanded),
-                    font_size=_font_size_points_from_pixel_height(expanded[3] - expanded[1], height),
+                    font_size=_font_size_points_from_pixel_height(
+                        expanded[3] - expanded[1], height
+                    ),
                     component_count=len(line_components),
                 )
             )
@@ -1485,11 +1493,7 @@ def _match_detected_lines_to_text(
             matched.append(None)
             continue
         remaining.remove(best)
-        remaining = [
-            line
-            for line in remaining
-            if not _detected_line_is_fragment_of(line, best)
-        ]
+        remaining = [line for line in remaining if not _detected_line_is_fragment_of(line, best)]
         matched.append((best.bbox, best.color_hex, best.font_size))
     return matched
 
@@ -1502,18 +1506,12 @@ def _preferred_detected_lines_for_text(
     stripped = text.strip()
     if _looks_like_domain_label(stripped):
         domain_labels = [
-            line
-            for line in viable
-            if _is_left_domain_label_candidate(line, image_width)
+            line for line in viable if _is_left_domain_label_candidate(line, image_width)
         ]
         return domain_labels or viable
     if not _looks_like_parameter_line(stripped):
         return viable
-    right_column = [
-        line
-        for line in viable
-        if _is_right_column_text_candidate(line, image_width)
-    ]
+    right_column = [line for line in viable if _is_right_column_text_candidate(line, image_width)]
     return right_column or viable
 
 
@@ -1586,7 +1584,9 @@ def _text_line_match_score(
     expected_width = max(10.0, units * box_height * 0.9)
     ratio = box_width / expected_width
     width_score = abs(ratio - 1.0) if ratio < 2 else min(3.0, ratio / 2.0)
-    single_component_penalty = 0.15 if line.component_count == 1 and box_width > image_width * 0.2 else 0.0
+    single_component_penalty = (
+        0.15 if line.component_count == 1 and box_width > image_width * 0.2 else 0.0
+    )
     if _looks_like_domain_label(text.strip()):
         order_penalty = 0.0
     elif _looks_like_parameter_line(text.strip()):
@@ -1735,7 +1735,17 @@ def _parse_tesseract_tsv(
         return []
     header = lines[0].split("\t")
     index = {name: position for position, name in enumerate(header)}
-    required = {"block_num", "par_num", "line_num", "left", "top", "width", "height", "conf", "text"}
+    required = {
+        "block_num",
+        "par_num",
+        "line_num",
+        "left",
+        "top",
+        "width",
+        "height",
+        "conf",
+        "text",
+    }
     if not required.issubset(index):
         raise ProviderError(
             provider_role=config.role,
@@ -1780,7 +1790,9 @@ def _parse_tesseract_tsv(
         y2 = min(max_height, max(word["bbox"][3] for word in words))
         if x2 <= x1 or y2 <= y1:
             continue
-        confidence = max(0.0, min(1.0, sum(word["confidence"] for word in words) / len(words) / 100))
+        confidence = max(
+            0.0, min(1.0, sum(word["confidence"] for word in words) / len(words) / 100)
+        )
         items.append(
             OCRTextItem(
                 text=" ".join(word["text"] for word in words),
@@ -1901,7 +1913,9 @@ def _ocr_text_item_from_payload(item: dict[str, Any], config: ProviderConfig) ->
         confidence=float(item.get("confidence", 1.0)),
         font_family_hint=str(item.get("font_family", "")),
         font_size_hint=_optional_float(item.get("font_size", item.get("font_size_hint"))),
-        style_hints=dict(item.get("style_hints", {})) if isinstance(item.get("style_hints"), dict) else {},
+        style_hints=dict(item.get("style_hints", {}))
+        if isinstance(item.get("style_hints"), dict)
+        else {},
         color_hex=str(item.get("color", item.get("color_hex", "#000000"))),
         alignment=alignment,  # type: ignore[arg-type]
         provenance={

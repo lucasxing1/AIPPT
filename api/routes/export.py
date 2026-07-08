@@ -32,7 +32,6 @@ from src.generative_editable_pipeline import (
     GenerativeEditableSlideInput,
     GenerativeEditableValidationError,
     finalize_validated_export,
-    run_generative_editable_pipeline,
 )
 from src.generative_editable_vlm_reconstruction import (
     OpenAIChatVLMPageAnalysisProvider,
@@ -207,17 +206,21 @@ def _export_generative_editable_pptx(
         )
     fallback_factory = None
     if fallback_policy == "raster_pptx":
-        fallback_factory = lambda: _export_raster_pptx_fallback(
-            image_paths=ordered_image_paths,
-            output_path=output_path,
-            aspect_ratio=aspect_ratio,
-        )
+
+        def fallback_factory():
+            return _export_raster_pptx_fallback(
+                image_paths=ordered_image_paths,
+                output_path=output_path,
+                aspect_ratio=aspect_ratio,
+            )
     elif fallback_policy == "text_editable_background":
-        fallback_factory = lambda: _export_text_editable_background_fallback(
-            artifact_root=artifact_root,
-            job_id=job_id,
-            output_path=output_path,
-        )
+
+        def fallback_factory():
+            return _export_text_editable_background_fallback(
+                artifact_root=artifact_root,
+                job_id=job_id,
+                output_path=output_path,
+            )
 
     try:
         try:
@@ -271,7 +274,9 @@ def _provider_failure_validation_report(
         checked_pages=slide_count,
         issues=[
             ValidationIssue(
-                code="provider_timeout" if isinstance(error, ProviderTimeoutError) else "provider_failure",
+                code="provider_timeout"
+                if isinstance(error, ProviderTimeoutError)
+                else "provider_failure",
                 message=str(error) or error.__class__.__name__,
                 details=details,
             )
@@ -309,7 +314,9 @@ def _text_editable_background_fallback_error(reason: str) -> GenerativeEditableF
     )
 
 
-def _export_text_editable_background_fallback(*, artifact_root: Path, job_id: str, output_path: str) -> str:
+def _export_text_editable_background_fallback(
+    *, artifact_root: Path, job_id: str, output_path: str
+) -> str:
     job_dir = artifact_root / job_id
     deck_path = job_dir / "deck.json"
     if not deck_path.is_file():
@@ -322,7 +329,9 @@ def _export_text_editable_background_fallback(*, artifact_root: Path, job_id: st
     page_manifest_paths = []
     for page_ref in deck.page_manifest_paths:
         page = read_page_manifest(job_dir / page_ref)
-        background = page.text_clean_background or page.base_clean_background or page.chosen_background
+        background = (
+            page.text_clean_background or page.base_clean_background or page.chosen_background
+        )
         if not background:
             raise _text_editable_background_fallback_error(
                 "text_clean_background fallback requires a cleaned background artifact"
@@ -338,7 +347,9 @@ def _export_text_editable_background_fallback(*, artifact_root: Path, job_id: st
         )
         fallback_page_path = fallback_dir / Path(page_ref).name
         write_manifest(fallback_page_path, fallback_page)
-        page_manifest_paths.append(f"pages/text-editable-background-fallback/{fallback_page_path.name}")
+        page_manifest_paths.append(
+            f"pages/text-editable-background-fallback/{fallback_page_path.name}"
+        )
     fallback_deck = replace(
         deck,
         page_manifest_paths=page_manifest_paths,
@@ -368,7 +379,9 @@ def _export_http_exception(error: Exception) -> HTTPException:
 def _build_generative_editable_pipeline_dependencies() -> GenerativeEditablePipelineDependencies:
     config = load_generative_editable_config()
     return GenerativeEditablePipelineDependencies(
-        ocr_provider=_ocr_provider_for_config(config.ocr, timeout_seconds=config.timeouts.provider_call),
+        ocr_provider=_ocr_provider_for_config(
+            config.ocr, timeout_seconds=config.timeouts.provider_call
+        ),
         image_edit_provider=_image_edit_provider_for_config(config.clean_base_model),
         asset_sheet_image_edit_provider=_image_edit_provider_for_config(config.asset_sheet_model),
         repair_image_edit_provider=_image_edit_provider_for_config(config.repair_model),
@@ -389,7 +402,9 @@ def _build_vlm_editable_pipeline_dependencies(
 ) -> VLMEditablePipelineDependencies:
     profiles = load_default_profiles()
     if not profiles or not profiles.vlm:
-        raise GenerativeEditableConfigError("Missing VLM model profile for vlm_first reconstruction")
+        raise GenerativeEditableConfigError(
+            "Missing VLM model profile for vlm_first reconstruction"
+        )
     vlm_config = ProviderConfig(
         role="VLM",
         model=profiles.vlm.model,
@@ -401,7 +416,9 @@ def _build_vlm_editable_pipeline_dependencies(
         vlm_provider=OpenAIChatVLMPageAnalysisProvider(vlm_config),
         image_edit_provider=_image_edit_provider_for_config(config.clean_base_model),
         asset_sheet_image_edit_provider=_image_edit_provider_for_config(config.asset_sheet_model),
-        ocr_provider=_ocr_provider_for_config(config.ocr, timeout_seconds=config.timeouts.provider_call),
+        ocr_provider=_ocr_provider_for_config(
+            config.ocr, timeout_seconds=config.timeouts.provider_call
+        ),
         provider_timeout_seconds=config.timeouts.provider_call,
         page_timeout_seconds=config.timeouts.page,
         provider_max_attempts=config.retries.provider_max_attempts,

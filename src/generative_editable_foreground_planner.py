@@ -198,7 +198,9 @@ def _connected_components(pixels: set[tuple[int, int]]) -> list[list[tuple[int, 
                     stack.append(neighbor)
                     component.append(neighbor)
         components.append(component)
-    components.sort(key=lambda item: (min(point[1] for point in item), min(point[0] for point in item)))
+    components.sort(
+        key=lambda item: (min(point[1] for point in item), min(point[0] for point in item))
+    )
     return components
 
 

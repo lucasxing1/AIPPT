@@ -6,7 +6,10 @@ from PIL import Image
 
 import api.routes.export as export_route
 from src.generative_editable_manifest import read_deck_manifest
-from src.generative_editable_pipeline import GenerativeEditableSlideInput, run_generative_editable_pipeline
+from src.generative_editable_pipeline import (
+    GenerativeEditableSlideInput,
+    run_generative_editable_pipeline,
+)
 from tests.generative_editable_fixtures import write_deterministic_fixture_deck
 
 

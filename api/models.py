@@ -323,9 +323,7 @@ class ExportRequest(BaseModel):
     """导出请求"""
 
     slides: List[ExportSlide]
-    format: Literal["pdf", "pptx", "generative_editable_pptx"] = Field(
-        ..., description="导出格式"
-    )
+    format: Literal["pdf", "pptx", "generative_editable_pptx"] = Field(..., description="导出格式")
     aspect_ratio: Literal["16:9", "4:3"] = Field("16:9", description="导出画幅比例")
     slide_order: Optional[List[str]] = None
     editable_options: ExportEditableOptions = Field(default_factory=ExportEditableOptions)

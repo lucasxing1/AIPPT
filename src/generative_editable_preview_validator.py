@@ -141,9 +141,8 @@ def validate_composed_deck_structure(
         )
 
     expected_width, expected_height = slide_dimensions(deck.aspect_ratio)
-    if (
-        presentation is not None
-        and (presentation.slide_width != expected_width or presentation.slide_height != expected_height)
+    if presentation is not None and (
+        presentation.slide_width != expected_width or presentation.slide_height != expected_height
     ):
         issues.append(
             ValidationIssue(
@@ -191,7 +190,9 @@ def validate_composed_deck_structure(
         _validate_page_assets(page, root, issues)
         _validate_slide_background_identity(page, root, pptx_path, page_index, issues)
         source_background_used = _uses_full_slide_source_background(page, root)
-        editable_object_count = len(page.text_boxes) + len(page.native_shapes) + len(page.bitmap_assets)
+        editable_object_count = (
+            len(page.text_boxes) + len(page.native_shapes) + len(page.bitmap_assets)
+        )
         if source_background_used and editable_object_count == 0:
             issues.append(
                 ValidationIssue(
@@ -206,20 +207,17 @@ def validate_composed_deck_structure(
                     },
                 )
             )
-        if (
-            _has_non_empty_text(page)
-            and (
-                source_background_used
-                or (
-                    presentation is not None
-                    and page_index < len(presentation.slides)
-                    and _slide_contains_full_slide_source_picture(
-                        page,
-                        presentation.slides[page_index],
-                        root,
-                        presentation.slide_width,
-                        presentation.slide_height,
-                    )
+        if _has_non_empty_text(page) and (
+            source_background_used
+            or (
+                presentation is not None
+                and page_index < len(presentation.slides)
+                and _slide_contains_full_slide_source_picture(
+                    page,
+                    presentation.slides[page_index],
+                    root,
+                    presentation.slide_width,
+                    presentation.slide_height,
                 )
             )
         ):
@@ -431,7 +429,11 @@ def _text_dense_editable_preview_drift_analysis(
     native_shape_count = len(page_manifest.native_shapes)
     editable_object_count = text_box_count + bitmap_count + native_shape_count
     if text_box_count < 12 or editable_object_count < 20 or bitmap_count + native_shape_count < 4:
-        return {**rejected, "text_box_count": text_box_count, "editable_object_count": editable_object_count}
+        return {
+            **rejected,
+            "text_box_count": text_box_count,
+            "editable_object_count": editable_object_count,
+        }
     background_ref = str(page_manifest.chosen_background or "")
     source_ref = str(page_manifest.source_image_path or "")
     if background_ref and source_ref and background_ref == source_ref:
@@ -479,7 +481,9 @@ def _changed_pixel_text_overlap_metrics(
     source_size = page_manifest.source_image_size
     padding = max(8, round(min(changed_mask.size) * TEXT_DENSE_TEXT_REGION_PADDING_RATIO))
     for text_box in page_manifest.text_boxes:
-        left, top, right, bottom = _scale_bbox(text_box.source_pixel_bbox, source_size, changed_mask.size)
+        left, top, right, bottom = _scale_bbox(
+            text_box.source_pixel_bbox, source_size, changed_mask.size
+        )
         draw.rectangle(
             (
                 max(0, left - padding),
@@ -504,8 +508,10 @@ def _changed_pixel_mask(
     *,
     changed_pixel_delta_threshold: int,
 ) -> Image.Image:
-    return ImageChops.difference(source_rgb, preview_rgb).convert("L").point(
-        lambda pixel: 255 if pixel > changed_pixel_delta_threshold else 0
+    return (
+        ImageChops.difference(source_rgb, preview_rgb)
+        .convert("L")
+        .point(lambda pixel: 255 if pixel > changed_pixel_delta_threshold else 0)
     )
 
 
@@ -746,7 +752,9 @@ def _validate_bitmap_asset_provenance(
     asset,
     issues: list[ValidationIssue],
 ) -> None:
-    if _is_allowed_complex_source_preserved_asset(asset) or _is_allowed_clean_fallback_icon_source_preserved_asset(page, asset):
+    if _is_allowed_complex_source_preserved_asset(
+        asset
+    ) or _is_allowed_clean_fallback_icon_source_preserved_asset(page, asset):
         return
     provenance_text = _compact_text(asset.provenance)
     asset_path_text = _compact_text(asset.asset_path)
@@ -802,7 +810,8 @@ def _is_allowed_clean_fallback_icon_source_preserved_asset(page: PageManifest, a
         and provenance.get("alpha_strategy") == "opaque_source_crop"
         and provenance.get("asset_sheet_skipped_reason") == "icon_source_preserved"
         and candidate_provenance.get("source") == "vlm_bitmap_region"
-        and str(candidate_provenance.get("vlm_type") or "").lower() in {"icon", "ui_icon", "small_icon"}
+        and str(candidate_provenance.get("vlm_type") or "").lower()
+        in {"icon", "ui_icon", "small_icon"}
         and bool(provenance.get("original_source_pixel_bbox"))
         and _is_small_source_crop_asset(page, asset)
         and not provenance.get("asset_sheet_provider_failed")
@@ -906,7 +915,9 @@ def _uses_full_slide_source_background(page: PageManifest, root: Path) -> bool:
                 return False
             if bg.size != src.size:
                 bg = bg.resize(src.size)
-            if _chosen_background_is_text_clean(page) and _text_mask_region_changed(page, root, src, bg):
+            if _chosen_background_is_text_clean(page) and _text_mask_region_changed(
+                page, root, src, bg
+            ):
                 return False
             mean_delta, changed_ratio = _image_delta_metrics(
                 src,
@@ -922,7 +933,10 @@ def _uses_full_slide_source_background(page: PageManifest, root: Path) -> bool:
 
 
 def _chosen_background_is_text_clean(page: PageManifest) -> bool:
-    if str(page.provenance.get("chosen_background_kind", "")).lower() == "source_preserving_text_clean":
+    if (
+        str(page.provenance.get("chosen_background_kind", "")).lower()
+        == "source_preserving_text_clean"
+    ):
         return True
     if page.chosen_background and page.chosen_background == page.text_clean_background:
         return True
@@ -933,7 +947,10 @@ def _chosen_background_is_text_clean(page: PageManifest) -> bool:
         record = backgrounds.get(key)
         if not isinstance(record, dict):
             continue
-        if record.get("output_asset_ref") and record.get("output_asset_ref") != page.chosen_background:
+        if (
+            record.get("output_asset_ref")
+            and record.get("output_asset_ref") != page.chosen_background
+        ):
             continue
         if record.get("provider_role") == "local" and record.get("prompt_id") in {
             "local_text_cleanup",
@@ -1023,7 +1040,9 @@ def _slide_contains_full_slide_source_picture(
     return False
 
 
-def _validate_required_text(page: PageManifest, slide, issues: list[ValidationIssue], aspect_ratio: str) -> None:
+def _validate_required_text(
+    page: PageManifest, slide, issues: list[ValidationIssue], aspect_ratio: str
+) -> None:
     actual_counts: dict[str, int] = {}
     for shape in slide.shapes:
         if shape.shape_type == MSO_SHAPE_TYPE.TEXT_BOX:
@@ -1039,7 +1058,8 @@ def _validate_required_text(page: PageManifest, slide, issues: list[ValidationIs
         matching_shapes = [
             shape
             for shape in slide.shapes
-            if shape.shape_type == MSO_SHAPE_TYPE.TEXT_BOX and _normalize_text(shape.text) == normalized
+            if shape.shape_type == MSO_SHAPE_TYPE.TEXT_BOX
+            and _normalize_text(shape.text) == normalized
         ]
         if len(matching_shapes) < seen_expected[normalized]:
             issues.append(
@@ -1059,7 +1079,12 @@ def _validate_required_text(page: PageManifest, slide, issues: list[ValidationIs
             continue
         matched_shape = matching_shapes[seen_expected[normalized] - 1]
         expected_rect = _slide_rect_for_bbox(page, text_box.source_pixel_bbox, aspect_ratio)
-        actual_rect = (matched_shape.left, matched_shape.top, matched_shape.width, matched_shape.height)
+        actual_rect = (
+            matched_shape.left,
+            matched_shape.top,
+            matched_shape.width,
+            matched_shape.height,
+        )
         if not _text_rect_close(actual_rect, expected_rect, text_box):
             issues.append(
                 ValidationIssue(
@@ -1121,20 +1146,35 @@ def _validate_object_identity(
     slide_width: int,
     slide_height: int,
 ) -> None:
-    relevant_shapes = [shape for shape in slide.shapes if _shape_role(shape) in {"picture", "native_shape", "text"}]
+    relevant_shapes = [
+        shape for shape in slide.shapes if _shape_role(shape) in {"picture", "native_shape", "text"}
+    ]
     expected_index = 0
     for shape_index, shape_spec in enumerate(page.native_shapes):
         actual_shape = relevant_shapes[expected_index]
         if shape_spec.shape_type == "line":
-            if actual_shape.shape_type != MSO_SHAPE_TYPE.LINE or not _line_close(page, shape_spec, actual_shape, aspect_ratio):
-                _append_identity_issue(page, issues, "native_shape", str(shape_index), expected_index)
+            if actual_shape.shape_type != MSO_SHAPE_TYPE.LINE or not _line_close(
+                page, shape_spec, actual_shape, aspect_ratio
+            ):
+                _append_identity_issue(
+                    page, issues, "native_shape", str(shape_index), expected_index
+                )
         elif actual_shape.shape_type != MSO_SHAPE_TYPE.AUTO_SHAPE:
             _append_identity_issue(page, issues, "native_shape", str(shape_index), expected_index)
         else:
             expected_rect = _slide_rect_for_bbox(page, shape_spec.source_pixel_bbox, aspect_ratio)
-            actual_rect = (actual_shape.left, actual_shape.top, actual_shape.width, actual_shape.height)
-            if not _native_auto_shape_type_matches(shape_spec, actual_shape) or not _rect_close(actual_rect, expected_rect):
-                _append_identity_issue(page, issues, "native_shape", str(shape_index), expected_index)
+            actual_rect = (
+                actual_shape.left,
+                actual_shape.top,
+                actual_shape.width,
+                actual_shape.height,
+            )
+            if not _native_auto_shape_type_matches(shape_spec, actual_shape) or not _rect_close(
+                actual_rect, expected_rect
+            ):
+                _append_identity_issue(
+                    page, issues, "native_shape", str(shape_index), expected_index
+                )
         expected_index += 1
     for asset in sorted(page.bitmap_assets, key=lambda item: item.z_order):
         _validate_picture_identity(
@@ -1255,7 +1295,15 @@ def _validate_picture_identity(
     expected_sha = _image_sha1(expected_path) if expected_path is not None else ""
     actual_sha = getattr(root_shape.image, "sha1", "")
     if expected_sha and actual_sha != expected_sha:
-        _append_identity_issue(page, issues, target_kind, target_id, index, expected_sha=expected_sha, actual_sha=actual_sha)
+        _append_identity_issue(
+            page,
+            issues,
+            target_kind,
+            target_id,
+            index,
+            expected_sha=expected_sha,
+            actual_sha=actual_sha,
+        )
         return
     if expected_rect is None and expected_bbox is not None:
         expected_rect = _slide_rect_for_bbox(page, expected_bbox, aspect_ratio)
@@ -1329,10 +1377,14 @@ def _aspect_ratio_from_page(page: PageManifest) -> str:
 
 
 def _rect_close(actual: tuple[int, int, int, int], expected: tuple[int, int, int, int]) -> bool:
-    return all(abs(actual[index] - expected[index]) <= SLIDE_POSITION_TOLERANCE_EMU for index in range(4))
+    return all(
+        abs(actual[index] - expected[index]) <= SLIDE_POSITION_TOLERANCE_EMU for index in range(4)
+    )
 
 
-def _text_rect_close(actual: tuple[int, int, int, int], expected: tuple[int, int, int, int], text_box) -> bool:
+def _text_rect_close(
+    actual: tuple[int, int, int, int], expected: tuple[int, int, int, int], text_box
+) -> bool:
     if not getattr(text_box, "style_hints", {}).get("approximate_layout"):
         return _rect_close(actual, expected)
     left_close = abs(actual[0] - expected[0]) <= SLIDE_POSITION_TOLERANCE_EMU
@@ -1351,31 +1403,34 @@ def _native_auto_shape_type_matches(shape_spec, actual_shape) -> bool:
     return expected is not None and getattr(actual_shape, "auto_shape_type", None) == expected
 
 
-def _line_close(page: PageManifest, shape_spec, actual_shape, aspect_ratio: str | None = None) -> bool:
-    start = shape_spec.line_start or (shape_spec.source_pixel_bbox[0], shape_spec.source_pixel_bbox[1])
+def _line_close(
+    page: PageManifest, shape_spec, actual_shape, aspect_ratio: str | None = None
+) -> bool:
+    start = shape_spec.line_start or (
+        shape_spec.source_pixel_bbox[0],
+        shape_spec.source_pixel_bbox[1],
+    )
     end = shape_spec.line_end or (shape_spec.source_pixel_bbox[2], shape_spec.source_pixel_bbox[3])
     expected_start = _slide_point_for_source_pixel(page, start, aspect_ratio)
     expected_end = _slide_point_for_source_pixel(page, end, aspect_ratio)
     actual_start = (actual_shape.left, actual_shape.top)
     actual_end = (actual_shape.left + actual_shape.width, actual_shape.top + actual_shape.height)
     return (
-        _point_close(actual_start, expected_start)
-        and _point_close(actual_end, expected_end)
-    ) or (
-        _point_close(actual_start, expected_end)
-        and _point_close(actual_end, expected_start)
-    ) or _rect_close(
-        (actual_shape.left, actual_shape.top, actual_shape.width, actual_shape.height),
-        _slide_rect_for_bbox(
-            page,
-            (
-                min(start[0], end[0]),
-                min(start[1], end[1]),
-                max(start[0], end[0]),
-                max(start[1], end[1]),
+        (_point_close(actual_start, expected_start) and _point_close(actual_end, expected_end))
+        or (_point_close(actual_start, expected_end) and _point_close(actual_end, expected_start))
+        or _rect_close(
+            (actual_shape.left, actual_shape.top, actual_shape.width, actual_shape.height),
+            _slide_rect_for_bbox(
+                page,
+                (
+                    min(start[0], end[0]),
+                    min(start[1], end[1]),
+                    max(start[0], end[0]),
+                    max(start[1], end[1]),
+                ),
+                aspect_ratio,
             ),
-            aspect_ratio,
-        ),
+        )
     )
 
 
@@ -1384,15 +1439,21 @@ def _slide_point_for_source_pixel(
     point: tuple[int, int],
     aspect_ratio: str | None = None,
 ) -> tuple[int, int]:
-    left, top, _, _ = _slide_rect_for_bbox(page, (point[0], point[1], point[0] + 1, point[1] + 1), aspect_ratio)
+    left, top, _, _ = _slide_rect_for_bbox(
+        page, (point[0], point[1], point[0] + 1, point[1] + 1), aspect_ratio
+    )
     return left, top
 
 
 def _point_close(actual: tuple[int, int], expected: tuple[int, int]) -> bool:
-    return all(abs(actual[index] - expected[index]) <= SLIDE_POSITION_TOLERANCE_EMU for index in range(2))
+    return all(
+        abs(actual[index] - expected[index]) <= SLIDE_POSITION_TOLERANCE_EMU for index in range(2)
+    )
 
 
-def _same_aspect_ratio(first: tuple[int, int], second: tuple[int, int], tolerance: float = 0.01) -> bool:
+def _same_aspect_ratio(
+    first: tuple[int, int], second: tuple[int, int], tolerance: float = 0.01
+) -> bool:
     return abs((first[0] / first[1]) - (second[0] / second[1])) <= tolerance
 
 
@@ -1417,7 +1478,9 @@ def _image_delta_metrics(
         lambda value: 255 if value > changed_pixel_delta_threshold else 0,
         mode="L",
     )
-    changed_pixel_ratio = sum(ImageStat.Stat(grayscale).sum) / (255.0 * source.width * source.height)
+    changed_pixel_ratio = sum(ImageStat.Stat(grayscale).sum) / (
+        255.0 * source.width * source.height
+    )
     return mean_abs_delta, changed_pixel_ratio
 
 

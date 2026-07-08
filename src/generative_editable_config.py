@@ -100,7 +100,9 @@ def load_generative_editable_config(use_fake: bool = False) -> GenerativeEditabl
         clean_base_model=_provider_config(clean_role, _provider_source(clean_role, models)),
         asset_sheet_model=_provider_config(asset_role, _provider_source(asset_role, models)),
         repair_model=_provider_config(repair_role, _provider_source(repair_role, models)),
-        generation_model=_provider_config(generation_role, _provider_source(generation_role, models)),
+        generation_model=_provider_config(
+            generation_role, _provider_source(generation_role, models)
+        ),
         use_aippt_metadata_first=_as_bool(ocr_settings.get("use_aippt_metadata_first", True)),
         ocr_min_confidence=float(ocr_settings.get("min_confidence", 0.75)),
         quality=QualityConfig(

@@ -18,6 +18,7 @@ import io
 from pathlib import Path
 import re
 import time
+import unicodedata
 from typing import Any
 
 from PIL import Image, ImageChops, ImageDraw, ImageStat
@@ -1617,6 +1618,8 @@ def _should_keep_high_confidence_vlm_text_over_ocr(
     ocr_box: TextBoxSpec,
     vlm_box: TextBoxSpec,
 ) -> bool:
+    if _should_keep_medium_confidence_vlm_text_over_fragmentary_ocr(region, ocr_box, vlm_box):
+        return True
     if region.confidence < 0.90:
         return False
     if float(ocr_box.provenance.get("ocr_confidence", 0.0) or 0.0) >= 0.90:
@@ -1624,6 +1627,29 @@ def _should_keep_high_confidence_vlm_text_over_ocr(
     if _low_confidence_ocr_text_is_safe_for_high_confidence_vlm(region.text, ocr_box.text):
         return False
     return bool(_normalize_text_for_match(vlm_box.text))
+
+
+def _should_keep_medium_confidence_vlm_text_over_fragmentary_ocr(
+    region: VLMTextRegion,
+    ocr_box: TextBoxSpec,
+    vlm_box: TextBoxSpec,
+) -> bool:
+    if region.confidence < 0.80:
+        return False
+    if float(ocr_box.provenance.get("ocr_confidence", 0.0) or 0.0) >= 0.90:
+        return False
+    normalized_vlm = _normalize_text_for_match(vlm_box.text)
+    normalized_ocr = _normalize_text_for_match(ocr_box.text)
+    if len(normalized_vlm) < 6 or not normalized_ocr:
+        return False
+    if normalized_vlm == normalized_ocr:
+        return False
+    coverage = len(normalized_ocr) / max(1, len(normalized_vlm))
+    if normalized_ocr in normalized_vlm:
+        return coverage < 0.92
+    if coverage <= 0.55:
+        return True
+    return _text_similarity(vlm_box.text, ocr_box.text) < 0.55
 
 
 def _merged_ocr_text_box_for_guard(ocr_boxes: list[TextBoxSpec]) -> TextBoxSpec:
@@ -1906,8 +1932,7 @@ def _create_vlm_asset_sheet_assets(
         artifact_root=artifacts.job_dir,
         slide_id=slide_id,
         page_index=page_index,
-        reason="complex_bitmap_region",
-        asset_sheet_skipped_reason="complex_bitmap_region",
+        reason="source_preserved_bitmap_region",
         transparent_bboxes=text_bboxes,
     )
     if not asset_sheet_candidates:
@@ -2033,7 +2058,20 @@ def _create_vlm_asset_sheet_assets(
 
 
 def _candidate_should_use_asset_sheet(candidate: ForegroundCandidate) -> bool:
-    return candidate.classification == "bitmap_asset_candidate"
+    return candidate.classification == "bitmap_asset_candidate" and not _candidate_is_vlm_icon(candidate)
+
+
+def _candidate_is_vlm_icon(candidate: ForegroundCandidate) -> bool:
+    provenance = candidate.provenance or {}
+    return str(provenance.get("vlm_type") or "").lower() in {"icon", "ui_icon", "small_icon"}
+
+
+def _source_preserved_skip_reason_for_candidate(candidate: ForegroundCandidate) -> str:
+    if _candidate_is_vlm_icon(candidate):
+        return "icon_source_preserved"
+    if candidate.classification == "complex_whole_visual":
+        return "complex_bitmap_region"
+    return ""
 
 
 def _with_candidate_z_order(
@@ -2092,6 +2130,9 @@ def _source_preserved_bitmap_assets_from_candidates(
         source_rgb = source_image.convert("RGB")
         background_rgb = background_image.convert("RGB").resize(source_rgb.size)
         for index, candidate in enumerate(candidates, start=1):
+            candidate_skipped_reason = asset_sheet_skipped_reason
+            if not candidate_skipped_reason and not asset_sheet_provider_failed and not asset_sheet_slicing_failed:
+                candidate_skipped_reason = _source_preserved_skip_reason_for_candidate(candidate)
             bbox = _clamp_bbox(
                 _pad_bbox(candidate.source_pixel_bbox, fallback_padding),
                 source_rgb.size,
@@ -2141,7 +2182,7 @@ def _source_preserved_bitmap_assets_from_candidates(
                         },
                         provider_failed=asset_sheet_provider_failed,
                         slicing_failed=asset_sheet_slicing_failed,
-                        skipped_reason=asset_sheet_skipped_reason,
+                        skipped_reason=candidate_skipped_reason,
                         reason=reason,
                     ),
                 )
@@ -2568,7 +2609,12 @@ def _text_box_from_vlm(
         source_pixel_bbox=bbox,
         source_pixel_polygon=_bbox_polygon(bbox),
         font_family="Microsoft YaHei",
-        font_size=_estimate_font_size(bbox, mapper.source_image_size, role=region.role),
+        font_size=_estimate_font_size(
+            bbox,
+            mapper.source_image_size,
+            role=region.role,
+            text=region.text,
+        ),
         color_hex=region.color_hex or _infer_text_color(source_rgb, bbox),
         alignment="left",
         style_hints={
@@ -2712,7 +2758,7 @@ def _vlm_compact_analysis_prompt(size: tuple[int, int]) -> str:
         "输出 schema: {"
         "\"coordinate_space\":{\"width\":%d,\"height\":%d,\"unit\":\"px\"},"
         "\"text_regions\":[{\"id\":\"t1\",\"text\":\"原文\",\"bbox\":[0,0,1,1],\"role\":\"title|heading|body|label|button\",\"color\":\"#RRGGBB\",\"confidence\":0.9,\"group_id\":\"g1\"}],"
-        "\"bitmap_regions\":[{\"id\":\"b1\",\"type\":\"photo|icon|qr|product|component|other\",\"bbox\":[0,0,1,1],\"importance\":\"major|minor\",\"group_id\":\"g1\"}],"
+        "\"bitmap_regions\":[{\"id\":\"b1\",\"type\":\"photo|icon|logo|qr|product|component|other\",\"bbox\":[0,0,1,1],\"importance\":\"major|minor\",\"group_id\":\"g1\"}],"
         "\"shape_regions\":[{\"id\":\"s1\",\"type\":\"rounded_rect|rect|line|divider|connector|arrow|circle|other\",\"bbox\":[0,0,1,1],\"importance\":\"major|minor\",\"group_id\":\"g1\"}]"
         "}。\n"
         "规则：文字逐项列出，中文照抄，不合并跨区域文字；大背景不要放入 bitmap_regions；"
@@ -2852,8 +2898,9 @@ def _estimate_font_size(
     source_image_size: tuple[int, int],
     *,
     role: str,
+    text: str = "",
 ) -> float:
-    _left, top, _right, bottom = bbox
+    left, top, right, bottom = bbox
     height_px = max(1, bottom - top)
     slide_height_inches = 5.625
     # VLM bboxes describe the visible glyph envelope, while PPT renderers need
@@ -2861,9 +2908,59 @@ def _estimate_font_size(
     # drifting from source renders because text clips or expands vertically.
     if role in {"title", "heading"}:
         font_size = height_px / source_image_size[1] * slide_height_inches * 72 * 0.9
-        return max(12.0, min(font_size, 44.0))
-    font_size = height_px / source_image_size[1] * slide_height_inches * 72 * 0.65
-    return max(7.0, min(font_size, 22.0))
+        font_size = min(font_size, 44.0)
+        min_font_size = 12.0
+    else:
+        font_size = height_px / source_image_size[1] * slide_height_inches * 72 * 0.65
+        font_size = min(font_size, 22.0)
+        min_font_size = 7.0
+    width_capped = _cap_font_size_by_text_width(
+        font_size,
+        bbox_width_px=max(1, right - left),
+        source_width_px=max(1, source_image_size[0]),
+        role=role,
+        text=text,
+    )
+    return max(min_font_size, width_capped)
+
+
+def _cap_font_size_by_text_width(
+    font_size: float,
+    *,
+    bbox_width_px: int,
+    source_width_px: int,
+    role: str,
+    text: str,
+) -> float:
+    line_units = [
+        _estimate_text_line_units(line)
+        for line in str(text).splitlines()
+        if line.strip()
+    ]
+    if not line_units:
+        return font_size
+    longest_line_units = max(line_units)
+    if longest_line_units <= 0:
+        return font_size
+    slide_width_points = 10.0 * 72.0
+    bbox_width_points = bbox_width_px / source_width_px * slide_width_points
+    width_factor = 0.9 if role in {"title", "heading"} else 1.05
+    width_based_font_size = bbox_width_points / (longest_line_units * width_factor)
+    return min(font_size, width_based_font_size)
+
+
+def _estimate_text_line_units(line: str) -> float:
+    units = 0.0
+    for char in line:
+        if char.isspace():
+            units += 0.35
+        elif char.isascii():
+            units += 0.55 if char.isalnum() else 0.35
+        elif unicodedata.category(char).startswith("P"):
+            units += 0.5
+        else:
+            units += 1.0
+    return units
 
 
 def _infer_text_color(image: Image.Image, bbox: PixelBBox) -> str:

@@ -1625,6 +1625,94 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertGreaterEqual(page.text_boxes[0].font_size or 0, 32.0)
         self.assertTrue(page.text_boxes[0].style_hints["bold"])
 
+    def test_vlm_heading_font_size_is_capped_by_text_width_density(self):
+        from src.generative_editable_vlm_reconstruction import (
+            build_page_manifest_from_vlm_analysis,
+            coerce_vlm_analysis,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            Image.new("RGB", (1672, 941), "#001122").save(source)
+            Image.new("RGB", (1672, 941), "#001122").save(background)
+            analysis = coerce_vlm_analysis(
+                {
+                    "coordinate_space": {"width": 1672, "height": 941, "unit": "px"},
+                    "text_regions": [
+                        {
+                            "id": "narrow-heading",
+                            "text": "传统电动车\n长途焦虑",
+                            "bbox": [104, 196, 224, 266],
+                            "role": "heading",
+                            "confidence": 0.88,
+                        }
+                    ],
+                    "bitmap_regions": [],
+                    "shape_regions": [],
+                }
+            )
+
+            page = build_page_manifest_from_vlm_analysis(
+                analysis=analysis,
+                slide_id="slide-a",
+                page_index=0,
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                aspect_ratio="16:9",
+            )
+
+        self.assertLessEqual(page.text_boxes[0].font_size or 0, 16.0)
+        self.assertTrue(page.text_boxes[0].style_hints["bold"])
+
+    def test_vlm_body_font_size_is_capped_by_text_width_density(self):
+        from src.generative_editable_vlm_reconstruction import (
+            build_page_manifest_from_vlm_analysis,
+            coerce_vlm_analysis,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            Image.new("RGB", (1672, 941), "#001122").save(source)
+            Image.new("RGB", (1672, 941), "#001122").save(background)
+            analysis = coerce_vlm_analysis(
+                {
+                    "coordinate_space": {"width": 1672, "height": 941, "unit": "px"},
+                    "text_regions": [
+                        {
+                            "id": "solution-body",
+                            "text": "四零重力座椅，\n全家舒适出行",
+                            "bbox": [409, 579, 594, 640],
+                            "role": "body",
+                            "confidence": 0.9,
+                        }
+                    ],
+                    "bitmap_regions": [],
+                    "shape_regions": [],
+                }
+            )
+
+            page = build_page_manifest_from_vlm_analysis(
+                analysis=analysis,
+                slide_id="slide-a",
+                page_index=0,
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                aspect_ratio="16:9",
+            )
+
+        self.assertLessEqual(page.text_boxes[0].font_size or 0, 13.0)
+        self.assertFalse(page.text_boxes[0].style_hints["bold"])
+
     def test_vlm_page_manifest_marks_clean_background_as_text_clean(self):
         from src.generative_editable_vlm_reconstruction import (
             build_page_manifest_from_vlm_analysis,
@@ -1722,6 +1810,112 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             )
 
         self.assertEqual([box.text for box in page.text_boxes], ["保持视野清晰"])
+        self.assertEqual(page.text_boxes[0].provenance["provider_role"], "VLM")
+
+    def test_vlm_text_resolution_keeps_medium_confidence_vlm_text_over_short_ocr_fragment(self):
+        from src.generative_editable_manifest import TextBoxSpec
+        from src.generative_editable_vlm_reconstruction import (
+            build_page_manifest_from_vlm_analysis,
+            coerce_vlm_analysis,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            Image.new("RGB", (160, 90), "#001122").save(source)
+            Image.new("RGB", (160, 90), "#001122").save(background)
+            analysis = coerce_vlm_analysis(
+                {
+                    "coordinate_space": {"width": 160, "height": 90, "unit": "px"},
+                    "text_regions": [
+                        {
+                            "id": "range-anxiety",
+                            "text": "续航短,\n频繁充电",
+                            "bbox": [40, 24, 82, 48],
+                            "role": "body",
+                            "confidence": 0.86,
+                        }
+                    ],
+                    "bitmap_regions": [],
+                    "shape_regions": [],
+                }
+            )
+            fragment_ocr = TextBoxSpec(
+                text="充电慢，",
+                source_pixel_bbox=(50, 30, 70, 38),
+                source_pixel_polygon=((50, 30), (70, 30), (70, 38), (50, 38)),
+                font_size=8,
+                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+            )
+
+            page = build_page_manifest_from_vlm_analysis(
+                analysis=analysis,
+                slide_id="slide-a",
+                page_index=0,
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                aspect_ratio="16:9",
+                text_boxes=[fragment_ocr],
+            )
+
+        self.assertEqual([box.text for box in page.text_boxes], ["续航短,\n频繁充电"])
+        self.assertEqual(page.text_boxes[0].provenance["provider_role"], "VLM")
+
+    def test_vlm_text_resolution_keeps_medium_confidence_vlm_text_over_substring_ocr_fragment(self):
+        from src.generative_editable_manifest import TextBoxSpec
+        from src.generative_editable_vlm_reconstruction import (
+            build_page_manifest_from_vlm_analysis,
+            coerce_vlm_analysis,
+        )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sources" / "0000-slide-a" / "source.png"
+            background = root / "backgrounds" / "0000-slide-a" / "clean.png"
+            source.parent.mkdir(parents=True)
+            background.parent.mkdir(parents=True)
+            Image.new("RGB", (320, 180), "#001122").save(source)
+            Image.new("RGB", (320, 180), "#001122").save(background)
+            analysis = coerce_vlm_analysis(
+                {
+                    "coordinate_space": {"width": 320, "height": 180, "unit": "px"},
+                    "text_regions": [
+                        {
+                            "id": "range-solution",
+                            "text": "纯电续航里程长",
+                            "bbox": [40, 40, 170, 70],
+                            "role": "body",
+                            "confidence": 0.86,
+                        }
+                    ],
+                    "bitmap_regions": [],
+                    "shape_regions": [],
+                }
+            )
+            substring_ocr = TextBoxSpec(
+                text="续航里程长",
+                source_pixel_bbox=(58, 42, 170, 68),
+                source_pixel_polygon=((58, 42), (170, 42), (170, 68), (58, 68)),
+                font_size=12,
+                provenance={"content_source": "ocr", "layout_source": "ocr", "ocr_confidence": 0.78},
+            )
+
+            page = build_page_manifest_from_vlm_analysis(
+                analysis=analysis,
+                slide_id="slide-a",
+                page_index=0,
+                source_image_path=source,
+                clean_background_path=background,
+                artifact_root=root,
+                aspect_ratio="16:9",
+                text_boxes=[substring_ocr],
+            )
+
+        self.assertEqual([box.text for box in page.text_boxes], ["纯电续航里程长"])
         self.assertEqual(page.text_boxes[0].provenance["provider_role"], "VLM")
 
     def test_vlm_text_resolution_keeps_high_confidence_vlm_text_over_partial_ocr_substring(self):
@@ -2430,7 +2624,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                             }
                         ],
                         "bitmap_regions": [
-                            {"id": "icon", "type": "icon", "bbox": [120, 20, 150, 50]},
+                            {"id": "logo", "type": "logo", "bbox": [120, 20, 150, 50]},
                         ],
                         "shape_regions": [
                             {"id": "divider", "type": "divider", "bbox": [20, 60, 150, 61]},
@@ -2524,7 +2718,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
         self.assertIn("vlm", page.provider_output_paths)
         self.assertIn("asset_sheet", page.provider_output_paths)
         self.assertEqual([sheet.sheet_id for sheet in page.asset_sheets], ["vlm-asset-sheet-0000"])
-        self.assertEqual(page.asset_sheets[0].candidate_ids, ["icon"])
+        self.assertEqual(page.asset_sheets[0].candidate_ids, ["logo"])
         self.assertEqual(page.bitmap_assets[0].provenance["split_method"], "connected_components")
         self.assertEqual(page.provenance["reconstruction_strategy"], "vlm_first")
         self.assertEqual(page.provenance["text_mask_path"], "assets/0000-slide-a/vlm-text-bitmap-mask.png")
@@ -2552,7 +2746,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         "coordinate_space": {"width": 160, "height": 90, "unit": "px"},
                         "text_regions": [],
                         "bitmap_regions": [
-                            {"id": "icon", "type": "icon", "bbox": [40, 20, 90, 60]},
+                            {"id": "logo", "type": "logo", "bbox": [40, 20, 90, 60]},
                         ],
                         "shape_regions": [
                             {"id": "line-a", "type": "line", "bbox": [20, 60, 140, 61]}
@@ -2942,7 +3136,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         "text_regions": [],
                         "bitmap_regions": [
                             {"id": "product", "type": "product", "bbox": [20, 20, 70, 60]},
-                            {"id": "icon", "type": "icon", "bbox": [100, 20, 130, 50]},
+                            {"id": "logo", "type": "logo", "bbox": [100, 20, 130, 50]},
                         ],
                         "shape_regions": [],
                     }
@@ -3000,7 +3194,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             deck = read_deck_manifest(job_dir / "deck.json")
             page = read_page_manifest(job_dir / deck.page_manifest_paths[0])
 
-        self.assertEqual([asset.asset_id for asset in page.bitmap_assets], ["product", "icon"])
+        self.assertEqual([asset.asset_id for asset in page.bitmap_assets], ["product", "logo"])
         self.assertEqual(page.bitmap_assets[0].provenance["asset_sheet_skipped_reason"], "complex_bitmap_region")
         self.assertTrue(page.bitmap_assets[1].provenance["asset_sheet_provider_failed"])
 
@@ -3013,15 +3207,15 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             run_vlm_editable_pptx_pipeline,
         )
 
-        class TwoIconVLMProvider(VLMPageAnalysisProvider):
+        class TwoLogoVLMProvider(VLMPageAnalysisProvider):
             def analyze_page(self, image_path: str, *, timeout_seconds: int = 180):
                 return coerce_vlm_analysis(
                     {
                         "coordinate_space": {"width": 160, "height": 90, "unit": "px"},
                         "text_regions": [],
                         "bitmap_regions": [
-                            {"id": "icon-a", "type": "icon", "bbox": [30, 20, 55, 45]},
-                            {"id": "icon-b", "type": "icon", "bbox": [95, 20, 125, 50]},
+                            {"id": "logo-a", "type": "logo", "bbox": [30, 20, 55, 45]},
+                            {"id": "logo-b", "type": "logo", "bbox": [95, 20, 125, 50]},
                         ],
                         "shape_regions": [],
                     }
@@ -3076,7 +3270,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                 artifact_root=str(root / "artifacts"),
                 job_id="job-short-sheet",
                 dependencies=VLMEditablePipelineDependencies(
-                    vlm_provider=TwoIconVLMProvider(),
+                    vlm_provider=TwoLogoVLMProvider(),
                     image_edit_provider=FakeImageEditProvider(
                         ProviderConfig(
                             role="edit_model",
@@ -3094,8 +3288,91 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
             page = read_page_manifest(job_dir / deck.page_manifest_paths[0])
 
         self.assertEqual(page.asset_sheets, [])
-        self.assertEqual([asset.asset_id for asset in page.bitmap_assets], ["icon-a", "icon-b"])
+        self.assertEqual([asset.asset_id for asset in page.bitmap_assets], ["logo-a", "logo-b"])
         self.assertTrue(all(asset.provenance["asset_sheet_slicing_failed"] for asset in page.bitmap_assets))
+
+    def test_vlm_pipeline_skips_asset_sheet_for_icon_bitmap_regions(self):
+        from src.generative_editable_manifest import read_deck_manifest, read_page_manifest
+        from src.generative_editable_vlm_reconstruction import (
+            VLMEditablePipelineDependencies,
+            VLMPageAnalysisProvider,
+            coerce_vlm_analysis,
+            run_vlm_editable_pptx_pipeline,
+        )
+
+        class IconOnlyVLMProvider(VLMPageAnalysisProvider):
+            def analyze_page(self, image_path: str, *, timeout_seconds: int = 180):
+                return coerce_vlm_analysis(
+                    {
+                        "coordinate_space": {"width": 160, "height": 90, "unit": "px"},
+                        "text_regions": [],
+                        "bitmap_regions": [
+                            {"id": "icon-a", "type": "icon", "bbox": [30, 20, 55, 45]},
+                            {"id": "icon-b", "type": "icon", "bbox": [95, 20, 125, 50]},
+                        ],
+                        "shape_regions": [],
+                    }
+                )
+
+        class RecordingAssetSheetProvider(ImageEditProvider):
+            def __init__(self):
+                super().__init__(
+                    ProviderConfig(
+                        role="asset_sheet_model",
+                        provider="fake_image_edit",
+                        model="fake-image-edit",
+                        base_url="",
+                        api_key="",
+                    )
+                )
+                self.calls = []
+
+            def edit(self, request):
+                self.calls.append(request)
+                raise AssertionError("icon bitmap regions should not request asset sheet")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "input.png"
+            image = Image.new("RGB", (160, 90), "#001122")
+            draw = ImageDraw.Draw(image)
+            draw.rectangle((30, 20, 55, 45), fill="#FFAA00")
+            draw.rectangle((95, 20, 125, 50), fill="#22AAFF")
+            image.save(source)
+            asset_sheet_provider = RecordingAssetSheetProvider()
+
+            run_vlm_editable_pptx_pipeline(
+                slides=[{"slide_id": "slide-a", "image_path": str(source)}],
+                output_path=str(root / "out.pptx"),
+                artifact_root=str(root / "artifacts"),
+                job_id="job-icon-source-preserved",
+                dependencies=VLMEditablePipelineDependencies(
+                    vlm_provider=IconOnlyVLMProvider(),
+                    image_edit_provider=FakeImageEditProvider(
+                        ProviderConfig(
+                            role="edit_model",
+                            provider="fake_image_edit",
+                            model="fake-image-edit",
+                            base_url="",
+                            api_key="",
+                        )
+                    ),
+                    asset_sheet_image_edit_provider=asset_sheet_provider,
+                ),
+            )
+            job_dir = root / "artifacts" / "job-icon-source-preserved"
+            deck = read_deck_manifest(job_dir / "deck.json")
+            page = read_page_manifest(job_dir / deck.page_manifest_paths[0])
+
+        self.assertEqual(asset_sheet_provider.calls, [])
+        self.assertEqual(page.asset_sheets, [])
+        self.assertEqual([asset.asset_id for asset in page.bitmap_assets], ["icon-a", "icon-b"])
+        self.assertTrue(
+            all(
+                asset.provenance.get("asset_sheet_skipped_reason") == "icon_source_preserved"
+                for asset in page.bitmap_assets
+            )
+        )
 
     def test_vlm_pipeline_uses_ocr_for_mask_without_ungated_editable_text(self):
         from src.generative_editable_manifest import read_deck_manifest, read_page_manifest

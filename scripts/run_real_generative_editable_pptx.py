@@ -37,6 +37,7 @@ from src.generative_editable_pipeline import (  # noqa: E402
     GenerativeEditableFallbackError,
     GenerativeEditableSlideInput,
     GenerativeEditableValidationError,
+    finalize_validated_export,
     run_generative_editable_pipeline,
     with_provider_retries,
 )
@@ -48,6 +49,8 @@ from src.generative_editable_vlm_reconstruction import (  # noqa: E402
     with_vlm_provider_retries,
 )
 from src.generative_editable_preview_validator import (  # noqa: E402
+    ValidationIssue,
+    ValidationReport,
     quality_threshold_to_preview_gates,
     render_powerpoint_preview_with_metadata,
     validate_preview_similarity,
@@ -191,7 +194,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False))
         return 1
     print(json.dumps(result, ensure_ascii=False))
-    return 0 if result.get("status") == "passed" else 1
+    return 0 if result.get("status") in {"passed", "fallback_used"} else 1
 
 
 def _add_common_args(parser: argparse.ArgumentParser) -> None:
@@ -514,6 +517,7 @@ def _run_vlm_pipeline(args: argparse.Namespace, output_dir: Path) -> dict[str, A
     job_id = args.job_id or _generated_job_id()
     artifact_root = output_dir / "artifacts"
     output_path = output_dir / f"{job_id}.pptx"
+    raster_fallback_path = output_dir / f"{job_id}.raster-fallback.pptx"
     provider_timeout = _provider_timeout_for_args(args)
     dependencies = _vlm_dependencies(
         use_fake=args.use_fake,
@@ -522,35 +526,65 @@ def _run_vlm_pipeline(args: argparse.Namespace, output_dir: Path) -> dict[str, A
         provider_retry_backoff_seconds=getattr(args, "provider_retry_backoff", -1.0),
         page_timeout_seconds=getattr(args, "pipeline_page_timeout", 0.0),
     )
-    result = run_vlm_editable_pptx_pipeline(
-        slides=[
-            {"slide_id": f"slide-{index + 1}", "image_path": str(path)}
-            for index, path in enumerate(images)
-        ],
-        output_path=str(output_path),
-        artifact_root=str(artifact_root),
-        job_id=job_id,
-        aspect_ratio=args.aspect_ratio,
-        dependencies=dependencies,
-        cleanup_artifacts=False,
+    fallback_factory = (
+        lambda: _export_raster_pptx_fallback(
+            image_paths=images,
+            output_path=raster_fallback_path,
+            aspect_ratio=args.aspect_ratio,
+        )
+        if args.fallback_policy == "raster_pptx"
+        else None
     )
+    try:
+        result = run_vlm_editable_pptx_pipeline(
+            slides=[
+                {"slide_id": f"slide-{index + 1}", "image_path": str(path)}
+                for index, path in enumerate(images)
+            ],
+            output_path=str(output_path),
+            artifact_root=str(artifact_root),
+            job_id=job_id,
+            aspect_ratio=args.aspect_ratio,
+            dependencies=dependencies,
+            cleanup_artifacts=False,
+        )
+    except GenerativeEditableValidationError as exc:
+        result = finalize_validated_export(
+            validation_report=exc.validation_report,
+            output_path=str(output_path),
+            fallback_policy=args.fallback_policy,
+            fallback_output_factory=fallback_factory,
+        )
+    except (ProviderError, ProviderTimeoutError) as exc:
+        if args.fallback_policy == "fail":
+            raise
+        result = finalize_validated_export(
+            validation_report=_provider_failure_validation_report(exc, len(images)),
+            output_path=str(output_path),
+            fallback_policy=args.fallback_policy,
+            fallback_output_factory=fallback_factory,
+        )
     job_dir = artifact_root / job_id
     deck_path = job_dir / "deck.json"
     result_output_path = Path(result.output_path)
     object_stats = _pptx_object_stats(result_output_path)
-    reconstruction_issues = _reconstruction_object_issues(
-        deck_manifest_path=deck_path,
-        artifact_root=job_dir,
-        object_stats=object_stats,
-    )
-    preview_reports = _write_preview_reports(
-        source_images=images,
-        pptx_path=result_output_path,
-        deck_manifest_path=deck_path,
-        artifact_root=job_dir,
-        similarity_threshold=0.92,
-        output_dir=output_dir / "previews",
-    )
+    if deck_path.is_file():
+        reconstruction_issues = _reconstruction_object_issues(
+            deck_manifest_path=deck_path,
+            artifact_root=job_dir,
+            object_stats=object_stats,
+        )
+        preview_reports = _write_preview_reports(
+            source_images=images,
+            pptx_path=result_output_path,
+            deck_manifest_path=deck_path,
+            artifact_root=job_dir,
+            similarity_threshold=getattr(dependencies, "preview_similarity_threshold", 0.92),
+            output_dir=output_dir / "previews",
+        )
+    else:
+        reconstruction_issues = []
+        preview_reports = []
     status = _status_with_preview_reports(
         _status_with_reconstruction_issues(result.status, reconstruction_issues),
         preview_reports,
@@ -571,6 +605,9 @@ def _run_vlm_pipeline(args: argparse.Namespace, output_dir: Path) -> dict[str, A
         **warning_summary,
         "preview_reports": preview_reports,
     }
+    if getattr(result, "validation_report", None) is not None:
+        report["validation_status"] = result.validation_report.status
+        report["validation_issues"] = [issue.code for issue in result.validation_report.issues]
     _augment_result_with_stage_events(report, job_dir)
     report_path = output_dir / "report.json"
     _write_json(report_path, report)
@@ -581,6 +618,31 @@ def _run_vlm_pipeline(args: argparse.Namespace, output_dir: Path) -> dict[str, A
         "report_path": str(report_path),
         "artifact_root": str(job_dir),
     }
+
+
+def _provider_failure_validation_report(error: ProviderError, slide_count: int) -> ValidationReport:
+    details: dict[str, Any] = {
+        "provider_role": error.provider_role,
+        "operation": error.operation,
+        "retryable": bool(error.retryable),
+    }
+    if error.status_code is not None:
+        details["status_code"] = error.status_code
+    if error.provider_error_code:
+        details["provider_error_code"] = error.provider_error_code
+    if isinstance(error, ProviderTimeoutError):
+        details["timeout_seconds"] = error.timeout_seconds
+    return ValidationReport(
+        status="failed",
+        checked_pages=slide_count,
+        issues=[
+            ValidationIssue(
+                code="provider_timeout" if isinstance(error, ProviderTimeoutError) else "provider_failure",
+                message=str(error) or error.__class__.__name__,
+                details=details,
+            )
+        ],
+    )
 
 
 def _export_raster_pptx_fallback(

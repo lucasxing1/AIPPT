@@ -272,6 +272,54 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             str((root / "out" / "fallback-policy.raster-fallback.pptx").resolve()),
         )
 
+    def test_vlm_first_run_uses_raster_fallback_on_provider_failure(self):
+        import scripts.run_real_generative_editable_pptx as runner
+
+        def fake_vlm_pipeline(**kwargs):
+            raise ProviderError(
+                provider_role="ocr_model",
+                operation="extract_text",
+                message="upstream failed",
+                retryable=False,
+            )
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "slide.png"
+            Image.new("RGB", (800, 450), "#FFFFFF").save(source)
+            stdout = io.StringIO()
+            with (
+                patch.object(runner, "_vlm_dependencies", return_value=object()),
+                patch.object(runner, "run_vlm_editable_pptx_pipeline", side_effect=fake_vlm_pipeline),
+                patch.object(runner, "_write_preview_reports", return_value=[]),
+                redirect_stdout(stdout),
+            ):
+                exit_code = main(
+                    [
+                        "run",
+                        "--mode",
+                        "vlm_first",
+                        "--input-images",
+                        str(source),
+                        "--output-dir",
+                        str(root / "out"),
+                        "--job-id",
+                        "vlm-provider-fallback",
+                        "--fallback-policy",
+                        "raster_pptx",
+                    ]
+                )
+            line = json.loads(stdout.getvalue().splitlines()[-1])
+            report = json.loads(Path(line["report_path"]).read_text(encoding="utf-8"))
+            output_exists = Path(line["output_path"]).exists()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(line["status"], "fallback_used")
+        self.assertEqual(Path(line["output_path"]).name, "vlm-provider-fallback.raster-fallback.pptx")
+        self.assertTrue(output_exists)
+        self.assertEqual(report["fallback_used"], "raster_pptx")
+        self.assertEqual(report["object_stats"]["slides"][0]["full_slide_picture_count"], 1)
+
     def test_run_mode_defaults_to_vlm_first_pipeline(self):
         import scripts.run_real_generative_editable_pptx as runner
 

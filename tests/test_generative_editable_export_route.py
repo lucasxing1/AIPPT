@@ -838,6 +838,47 @@ class GenerativeEditableExportRouteTest(unittest.TestCase):
         self.assertEqual(result.status, "fallback_used")
         self.assertEqual(result.fallback_used, "raster_pptx")
 
+    def test_explicit_raster_fallback_handles_vlm_provider_failure(self):
+        from src.generative_editable_providers import ProviderError
+
+        calls = []
+        provider_error = ProviderError(
+            provider_role="ocr_model",
+            operation="extract_text",
+            message="upstream failed",
+            retryable=False,
+        )
+
+        def fake_raster_export(image_paths, output_path, aspect_ratio="16:9"):
+            calls.append((list(image_paths), output_path, aspect_ratio))
+            Path(output_path).write_bytes(b"raster-fallback")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            image_path = Path(tmp) / "slide.png"
+            output_path = Path(tmp) / "out.pptx"
+            _write_fake_vlm_source(image_path)
+
+            with patch("api.routes.export._export_pptx", fake_raster_export), patch(
+                "api.routes.export._build_vlm_editable_pipeline_dependencies",
+                lambda config: _fake_vlm_route_dependencies(provider_exception=provider_error),
+            ):
+                result = export_route._export_generative_editable_pptx(
+                    [str(image_path)],
+                    str(output_path),
+                    aspect_ratio="16:9",
+                    editable_options=ExportRequest(
+                        slides=[ExportSlide(image_base64=_slide_base64())],
+                        format="generative_editable_pptx",
+                        editable_options={"fallback_policy": "raster_pptx"},
+                    ).editable_options,
+                )
+
+            self.assertEqual(output_path.read_bytes(), b"raster-fallback")
+
+        self.assertEqual(calls[0][2], "16:9")
+        self.assertEqual(result.status, "fallback_used")
+        self.assertEqual(result.fallback_used, "raster_pptx")
+
     def test_text_editable_background_fallback_returns_text_editable_background_deck(self):
         from pptx import Presentation
 

@@ -50,6 +50,7 @@ from src.generative_editable_providers import (
     ProviderError,
     ProviderTimeoutError,
 )
+from src.generative_editable_preview_validator import ValidationIssue, ValidationReport
 from src.model_profiles import load_default_profiles
 from ..models import ExportRequest
 
@@ -236,9 +237,46 @@ def _export_generative_editable_pptx(
                 fallback_policy=fallback_policy,
                 fallback_output_factory=fallback_factory,
             )
+        except (ProviderError, ProviderTimeoutError) as exc:
+            if fallback_policy == "fail":
+                raise
+            return finalize_validated_export(
+                validation_report=_provider_failure_validation_report(exc, len(slide_inputs)),
+                output_path=output_path,
+                fallback_policy=fallback_policy,
+                fallback_output_factory=fallback_factory,
+            )
     except Exception:
         Path(output_path).unlink(missing_ok=True)
         raise
+
+
+def _provider_failure_validation_report(
+    error: ProviderError,
+    slide_count: int,
+) -> ValidationReport:
+    details: dict[str, object] = {
+        "provider_role": error.provider_role,
+        "operation": error.operation,
+        "retryable": bool(error.retryable),
+    }
+    if error.status_code is not None:
+        details["status_code"] = error.status_code
+    if error.provider_error_code:
+        details["provider_error_code"] = error.provider_error_code
+    if isinstance(error, ProviderTimeoutError):
+        details["timeout_seconds"] = error.timeout_seconds
+    return ValidationReport(
+        status="failed",
+        checked_pages=slide_count,
+        issues=[
+            ValidationIssue(
+                code="provider_timeout" if isinstance(error, ProviderTimeoutError) else "provider_failure",
+                message=str(error) or error.__class__.__name__,
+                details=details,
+            )
+        ],
+    )
 
 
 def _editable_fallback_policy(editable_options: object | None) -> str:

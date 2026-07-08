@@ -64,7 +64,22 @@ def _fake_vlm_route_dependencies(*, validation_status="passed"):
     )
 
 
+def _fake_vlm_config():
+    from dataclasses import replace
+
+    from src.generative_editable_config import load_generative_editable_config
+
+    return replace(load_generative_editable_config(use_fake=True), reconstruction_mode="vlm_first")
+
+
 class GenerativeEditableExportContractTest(unittest.TestCase):
+    def setUp(self):
+        self._original_config_loader = export_route.load_generative_editable_config
+        export_route.load_generative_editable_config = _fake_vlm_config
+
+    def tearDown(self):
+        export_route.load_generative_editable_config = self._original_config_loader
+
     def test_accepts_generative_editable_pptx_format(self):
         request = ExportRequest(
             slides=[ExportSlide(image_base64=_slide_base64())],

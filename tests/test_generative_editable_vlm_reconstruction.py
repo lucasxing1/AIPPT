@@ -14,6 +14,15 @@ from src.generative_editable_providers import OCRResult, OCRTextItem
 from src.generative_editable_providers import ProviderError
 
 
+def _fake_powerpoint_preview(page, artifact_root, *, pptx_path):
+    from src.generative_editable_preview_validator import PreviewRenderResult
+
+    return PreviewRenderResult(
+        image=Image.new("RGB", page.source_image_size, "white"),
+        metadata={"renderer": "test_powerpoint", "is_powerpoint_render": True},
+    )
+
+
 class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
     def test_vlm_validation_fails_large_source_preserved_bitmap_coverage_without_runner(self):
         from src.generative_editable_manifest import BitmapAssetSpec, PageManifest
@@ -255,7 +264,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     structure_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),
-                    preview_renderer=lambda page, artifact_root, *, pptx_path: object(),
+                    preview_renderer=_fake_powerpoint_preview,
                     preview_validator=preview_validator,
                 ),
             )
@@ -324,7 +333,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         structure_validator=lambda **kwargs: ValidationReport(
                             status="passed", checked_pages=1, issues=[]
                         ),
-                        preview_renderer=lambda page, artifact_root, *, pptx_path: object(),
+                        preview_renderer=_fake_powerpoint_preview,
                         preview_validator=failing_preview_validator,
                     ),
                 )
@@ -379,7 +388,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         structure_validator=lambda **kwargs: ValidationReport(
                             status="passed", checked_pages=1, issues=[]
                         ),
-                        preview_renderer=lambda page, artifact_root, *, pptx_path: object(),
+                        preview_renderer=_fake_powerpoint_preview,
                         preview_validator=lambda **kwargs: ValidationReport(
                             status="passed", checked_pages=1, issues=[]
                         ),
@@ -725,7 +734,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         structure_validator=lambda **kwargs: ValidationReport(
                             status="passed", checked_pages=1, issues=[]
                         ),
-                        preview_renderer=lambda page, artifact_root, *, pptx_path: object(),
+                        preview_renderer=_fake_powerpoint_preview,
                         preview_validator=lambda **kwargs: ValidationReport(
                             status="passed", checked_pages=1, issues=[]
                         ),
@@ -2922,7 +2931,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     structure_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),
-                    preview_renderer=lambda page, artifact_root, *, pptx_path: object(),
+                    preview_renderer=_fake_powerpoint_preview,
                     preview_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),
@@ -3135,7 +3144,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     structure_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),
-                    preview_renderer=lambda page, artifact_root, *, pptx_path: object(),
+                    preview_renderer=_fake_powerpoint_preview,
                     preview_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),
@@ -3241,7 +3250,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     structure_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),
-                    preview_renderer=lambda page, artifact_root, *, pptx_path: object(),
+                    preview_renderer=_fake_powerpoint_preview,
                     preview_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),
@@ -3719,7 +3728,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     structure_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),
-                    preview_renderer=lambda page, artifact_root, *, pptx_path: object(),
+                    preview_renderer=_fake_powerpoint_preview,
                     preview_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),
@@ -3826,7 +3835,7 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     structure_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),
-                    preview_renderer=lambda page, artifact_root, *, pptx_path: object(),
+                    preview_renderer=_fake_powerpoint_preview,
                     preview_validator=lambda **kwargs: ValidationReport(
                         status="passed", checked_pages=1, issues=[]
                     ),

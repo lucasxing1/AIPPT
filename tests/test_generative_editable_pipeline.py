@@ -14,6 +14,16 @@ from src.generative_editable_manifest import (
 from src.generative_editable_preview_validator import ValidationIssue, ValidationReport
 
 
+def _write_test_asset(
+    asset_root: str | Path, relative_path: str, size: tuple[int, int] = (16, 16)
+) -> None:
+    from PIL import Image
+
+    path = Path(asset_root) / relative_path
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGBA", size, (37, 99, 235, 255)).save(path)
+
+
 class GenerativeEditablePipelineTest(unittest.TestCase):
     def test_visual_text_coverage_reports_unmatched_left_label_candidate(self):
         import src.generative_editable_pipeline as pipeline
@@ -1113,6 +1123,16 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             draw.text((24, 20), "Title", fill="#FFFFFF")
             image.save(source)
 
+            def fake_asset_builder(**kwargs):
+                asset = BitmapAssetSpec(
+                    asset_id="photo",
+                    source_pixel_bbox=(120, 70, 280, 150),
+                    asset_path="assets/0000-slide-a/photo.png",
+                    z_order=1,
+                )
+                _write_test_asset(kwargs["asset_root"], asset.asset_path)
+                return AssetBuildResult(bitmap_assets=[asset])
+
             run_generative_editable_pipeline(
                 slides=[GenerativeEditableSlideInput(slide_id="slide-a", image_path=str(source))],
                 output_path=str(output_path),
@@ -1123,16 +1143,7 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                     image_edit_provider=DivergentBackgroundEditProvider(config.clean_base_model),
                     image_generation_provider=FakeImageGenerationProvider(config.generation_model),
                     foreground_planner=lambda **kwargs: [],
-                    asset_builder=lambda **kwargs: AssetBuildResult(
-                        bitmap_assets=[
-                            BitmapAssetSpec(
-                                asset_id="photo",
-                                source_pixel_bbox=(120, 70, 280, 150),
-                                asset_path="assets/0000-slide-a/photo.png",
-                                z_order=1,
-                            )
-                        ]
-                    ),
+                    asset_builder=fake_asset_builder,
                     visual_text_candidate_detector=lambda **kwargs: [],
                     composer=fake_composer,
                     structure_validator=lambda **kwargs: ValidationReport(
@@ -1222,6 +1233,16 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             draw.rounded_rectangle((120, 90, 280, 170), radius=12, fill="#586272")
             image.save(source)
 
+            def fake_asset_builder(**kwargs):
+                asset = BitmapAssetSpec(
+                    asset_id="complex-visual",
+                    source_pixel_bbox=(120, 90, 280, 170),
+                    asset_path="assets/0000-slide-a/complex-visual.png",
+                    z_order=1,
+                )
+                _write_test_asset(kwargs["asset_root"], asset.asset_path)
+                return AssetBuildResult(bitmap_assets=[asset])
+
             run_generative_editable_pipeline(
                 slides=[GenerativeEditableSlideInput(slide_id="slide-a", image_path=str(source))],
                 output_path=str(output_path),
@@ -1232,16 +1253,7 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                     image_edit_provider=BadGeneratedBackgroundEditProvider(config.clean_base_model),
                     image_generation_provider=FakeImageGenerationProvider(config.generation_model),
                     foreground_planner=lambda **kwargs: [],
-                    asset_builder=lambda **kwargs: AssetBuildResult(
-                        bitmap_assets=[
-                            BitmapAssetSpec(
-                                asset_id="complex-visual",
-                                source_pixel_bbox=(120, 90, 280, 170),
-                                asset_path="assets/0000-slide-a/complex-visual.png",
-                                z_order=1,
-                            )
-                        ]
-                    ),
+                    asset_builder=fake_asset_builder,
                     visual_text_candidate_detector=lambda **kwargs: [],
                     composer=fake_composer,
                     structure_validator=lambda **kwargs: ValidationReport(
@@ -1994,6 +2006,40 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
             draw.rounded_rectangle((10, 84, 390, 232), radius=12, fill="#94A3B8")
             image.save(source)
 
+            def fake_asset_builder(**kwargs):
+                assets = [
+                    BitmapAssetSpec(
+                        asset_id="oversized-source",
+                        source_pixel_bbox=(0, 80, 400, 138),
+                        asset_path="assets/0000-slide-a/oversized-source.png",
+                        z_order=1,
+                        provenance={"asset_strategy": "masked_source_element"},
+                    ),
+                    BitmapAssetSpec(
+                        asset_id="wide-transparent-source",
+                        source_pixel_bbox=(0, 80, 400, 240),
+                        asset_path="assets/0000-slide-a/wide-transparent-source.png",
+                        z_order=2,
+                        provenance={
+                            "asset_strategy": "masked_source_element",
+                            "background_difference_alpha": True,
+                        },
+                    ),
+                    BitmapAssetSpec(
+                        asset_id="small-icon",
+                        source_pixel_bbox=(24, 88, 70, 134),
+                        asset_path="assets/0000-slide-a/small-icon.png",
+                        z_order=3,
+                        provenance={
+                            "asset_strategy": "masked_source_element",
+                            "background_difference_alpha": True,
+                        },
+                    ),
+                ]
+                for asset in assets:
+                    _write_test_asset(kwargs["asset_root"], asset.asset_path)
+                return AssetBuildResult(bitmap_assets=assets)
+
             run_generative_editable_pipeline(
                 slides=[GenerativeEditableSlideInput(slide_id="slide-a", image_path=str(source))],
                 output_path=str(output_path),
@@ -2004,37 +2050,7 @@ class GenerativeEditablePipelineTest(unittest.TestCase):
                     image_edit_provider=BadGeneratedBackgroundEditProvider(config.clean_base_model),
                     image_generation_provider=FakeImageGenerationProvider(config.generation_model),
                     foreground_planner=lambda **kwargs: [],
-                    asset_builder=lambda **kwargs: AssetBuildResult(
-                        bitmap_assets=[
-                            BitmapAssetSpec(
-                                asset_id="oversized-source",
-                                source_pixel_bbox=(0, 80, 400, 138),
-                                asset_path="assets/0000-slide-a/oversized-source.png",
-                                z_order=1,
-                                provenance={"asset_strategy": "masked_source_element"},
-                            ),
-                            BitmapAssetSpec(
-                                asset_id="wide-transparent-source",
-                                source_pixel_bbox=(0, 80, 400, 240),
-                                asset_path="assets/0000-slide-a/wide-transparent-source.png",
-                                z_order=2,
-                                provenance={
-                                    "asset_strategy": "masked_source_element",
-                                    "background_difference_alpha": True,
-                                },
-                            ),
-                            BitmapAssetSpec(
-                                asset_id="small-icon",
-                                source_pixel_bbox=(24, 88, 70, 134),
-                                asset_path="assets/0000-slide-a/small-icon.png",
-                                z_order=3,
-                                provenance={
-                                    "asset_strategy": "masked_source_element",
-                                    "background_difference_alpha": True,
-                                },
-                            ),
-                        ]
-                    ),
+                    asset_builder=fake_asset_builder,
                     visual_text_candidate_detector=lambda **kwargs: [],
                     composer=fake_composer,
                     structure_validator=lambda **kwargs: ValidationReport(

@@ -24,6 +24,19 @@ from src.generative_editable_providers import (
 
 
 class RealGenerativeEditableRunnerTest(unittest.TestCase):
+    def setUp(self):
+        import scripts.run_real_generative_editable_pptx as runner
+
+        self._config_patcher = patch.object(
+            runner,
+            "load_generative_editable_config",
+            side_effect=lambda use_fake=False: load_generative_editable_config(use_fake=True),
+        )
+        self._config_patcher.start()
+
+    def tearDown(self):
+        self._config_patcher.stop()
+
     def test_default_replay_inputs_exclude_edited_derivatives(self):
         import scripts.run_real_generative_editable_pptx as runner
 

@@ -1,14 +1,20 @@
 # Generative Editable PPTX Export
 
-Generative editable PPTX export rebuilds a generated slide image into a PowerPoint deck with editable text boxes, conservative native shapes, and positioned bitmap assets. It is separate from the existing raster PPTX export and from the image-layer editable PPTX OpenSpec backup plan.
+Generative editable PPTX export converts slide images into PowerPoint decks that preserve visual fidelity while exposing practical editing handles. The exported deck can contain editable text boxes, conservative native PowerPoint shapes, and positioned bitmap assets.
 
-## When To Use It
+This mode is intended for workflows where the generated deck needs downstream editing in PowerPoint-compatible tools. It is separate from the standard PPTX export, which places each slide image as a single full-slide picture.
 
-Use **High-fidelity editable PPTX** when a deck needs to be edited in PowerPoint after generation and quality is more important than model cost. The existing **PPTX** option remains a raster export: each generated slide image is placed as a full-slide picture.
+## Capabilities
 
-The generative editable path is quality-gated. The default fallback policy is `fail`, so AIPPT returns an error instead of silently giving the user a lower-fidelity PPTX when validation fails.
+- Reconstructs each slide from an input image rather than requiring the original source layout.
+- Uses OCR and optional AIPPT text metadata to create editable PowerPoint text boxes.
+- Uses a VLM to understand page structure and candidate visual regions.
+- Keeps simple, high-confidence geometry as native PowerPoint objects where possible.
+- Keeps complex visuals as bitmap assets to preserve fidelity.
+- Runs structural and preview validation before returning the deck.
+- Supports explicit fallback policies instead of silently returning lower-fidelity output.
 
-## Request Contract
+## Export Request
 
 `POST /api/export`
 
@@ -42,48 +48,56 @@ The generative editable path is quality-gated. The default fallback policy is `f
 
 Supported `fallback_policy` values:
 
-- `fail`: default. Return an error if validation fails.
-- `text_editable_background`: explicitly allow a lower-fidelity PPTX that keeps editable text boxes over the generated text-clean background when full foreground reconstruction fails after artifacts are available.
-- `raster_pptx`: explicitly allow falling back to the existing raster PPTX exporter.
+- `fail`: Default. Return an error if editable reconstruction or validation fails.
+- `text_editable_background`: Return editable text over a cleaned background when foreground reconstruction fails after required artifacts are available.
+- `raster_pptx`: Return the standard raster PPTX as an explicit fallback.
 
-Fallback output is never returned unless the request explicitly permits it. When fallback is used, the response includes `X-Generative-Editable-Fallback-Policy` and `X-Generative-Editable-Fallback-Used` headers.
+When a fallback is used, the response includes:
 
-## Configuration
+- `X-Generative-Editable-Fallback-Policy`
+- `X-Generative-Editable-Fallback-Used`
 
-Provider settings live in `config.yaml`. `config.example.yaml` documents the expected shape with placeholder values.
+## Model Configuration
+
+Model settings live in `config.yaml`. `config.example.yaml` documents the supported structure with placeholder values.
+
+The editable export path uses these model roles:
+
+- `text_model`: Text chat-completions model. If omitted, the VLM profile may be used for text-only tasks.
+- `image_model`: Image generation model.
+- `edit_model`: Image editing model. If omitted, it may inherit from `image_model`.
+- `VLM`: Optional multimodal understanding model required for image-to-editable-PPTX reconstruction.
+- `ocr_model`: Optional OCR model required for image-to-editable-PPTX reconstruction.
+
+Example:
 
 ```yaml
 api:
   models:
-    prompt_model:
-      adapter: "openai_chat"
+    text_model:
       model: "..."
-      base_url: "..."
+      base_url: "https://api.example.com/v1"
       api_key: "..."
     image_model:
-      adapter: "raw_chat_multimodal"
       model: "..."
-      base_url: "..."
+      base_url: "https://api.example.com/v1"
       api_key: "..."
     edit_model:
-      adapter: "raw_chat_multimodal"
       model: "..."
-      base_url: "..."
+      base_url: "https://api.example.com/v1"
+      api_key: "..."
+    VLM:
+      model: "..."
+      base_url: "https://api.example.com/v1"
       api_key: "..."
     ocr_model:
-      provider: "..."
       model: "..."
-      base_url: "..."
+      base_url: "https://api.example.com/v1"
       api_key: "..."
-      # For local development smoke tests:
-      # provider: "local_tesseract"
-      # model: "eng"
-      # base_url: ""
-      # api_key: ""
 
 generative_editable_pptx:
   reconstruction:
-    mode: "generative"
+    mode: "vlm_first"
     clean_base_model: "edit_model"
     asset_sheet_model: "edit_model"
     repair_model: "edit_model"
@@ -96,37 +110,62 @@ generative_editable_pptx:
     max_repair_attempts: 2
     preview_similarity_threshold: 0.92
     require_preview_validation: true
+  retries:
+    provider_max_attempts: 2
+    repair_max_attempts: 2
+    backoff_seconds: 1.0
+  timeouts:
+    provider_call: 180
+    page: 600
 ```
 
-Do not commit real provider credentials. Before live verification, populate local `config.yaml` with OCR, image edit, and image generation provider settings, then run a one-slide smoke test before multi-slide verification.
+Do not commit real provider credentials.
 
-The current live adapter is an OpenAI-compatible chat-completions multimodal adapter (`openai_chat` or `raw_chat_multimodal`). It sends slide images as `image_url` message parts and expects the provider response to contain an image URL, data URL, or base64 image payload. It is not the official OpenAI Images API edit endpoint. If a provider requires multipart image-edit requests, add a provider-specific adapter behind the existing provider interfaces instead of changing the export contract; unsupported adapter names fail during dependency construction instead of silently using the wrong protocol.
+## Provider Protocol
 
-## Pipeline
+Current providers use OpenAI-compatible `/chat/completions` APIs:
 
-1. Create a job artifact directory and write source images.
-2. Run OCR. When `use_aippt_metadata_first` is enabled, AIPPT text metadata is used as semantic text when available; OCR supplies layout, style, color, and fallback text. When disabled, OCR text is used directly.
-3. Build text masks from accepted OCR/text boxes.
-4. Create `text_clean_background` and `base_clean_background` assets.
-5. Plan foreground candidates from source/base-clean differences.
+- Text and VLM providers return message text.
+- OCR providers must return structured OCR JSON.
+- Image generation and image editing providers return an image URL, data URL, or base64 image payload.
+
+Provider-specific adapters should be added behind the existing provider interfaces when a model requires a different protocol.
+
+## Reconstruction Pipeline
+
+1. Create an isolated export job directory and store source slide images.
+2. Run VLM page analysis to identify layout, visual regions, and reconstruction candidates.
+3. Run OCR and merge OCR output with optional AIPPT text metadata.
+4. Build text masks and generate cleaned background assets.
+5. Plan foreground candidates from VLM regions and source/background differences.
 6. Convert high-confidence simple geometry to native PowerPoint shapes.
-7. Generate bitmap assets for complex foreground regions through the configured asset-sheet provider and run configured bounded repair for failed assets. Source crops are only available when the pipeline dependency explicitly enables that internal diagnostic fallback; request fallback policies do not silently enable source crops.
-8. Compose PPTX using cleaned background, native shapes, bitmap assets, and editable text boxes.
-9. Validate structure and preview similarity. Repair bounded issues when possible.
-10. Return the validated deck, or an explicit fallback/error.
+7. Build bitmap assets for complex regions and run bounded repair when validation detects asset issues.
+8. Compose the PPTX from background, native shapes, bitmap assets, and editable text boxes.
+9. Validate the generated deck structure and preview similarity.
+10. Return the validated editable PPTX, an explicit fallback, or a structured error.
 
-## Quality And Cost Notes
+## Quality And Cost
 
-This path uses OCR plus image editing/image generation providers. It can require multiple provider calls per page: cleanup, asset sheet generation, repairs, and validation retries. That is expected; the design optimizes output quality first and leaves cost optimization to caching, component reuse, bounded concurrency, and explicit fallback policies.
+This export mode prioritizes editability and visual fidelity over model cost. A single slide can require multiple provider calls: VLM analysis, OCR, background cleanup, asset generation, repair, and validation-driven retries.
+
+Recommended production controls:
+
+- Use bounded concurrency.
+- Keep provider call timeouts explicit.
+- Enable retries only for retryable provider failures.
+- Cache source and intermediate artifacts where appropriate.
+- Use fallback policies intentionally per user workflow.
 
 ## Limitations
 
-- Bitmap assets are source-guided through provider calls and local slicing, but generated or repaired assets may not be pixel-identical to the original slide image.
-- Native shape conversion is conservative; uncertain regions stay as bitmap assets instead of inaccurate PowerPoint shapes.
-- Text editability depends on OCR quality and available AIPPT text metadata.
-- Current strict live smoke is not passing with the local provider set recorded on 2026-07-01 because OCR and image-edit upstream calls fail provider validation; see `docs/generative-editable-live-verification.md`.
-- Real provider smoke tests require local `config.yaml` settings and are not part of default CI.
+- Complex visuals are usually represented as bitmap assets, not fully editable native PowerPoint objects.
+- Generated or repaired bitmap assets may not be pixel-identical to the source image.
+- Native shape conversion is conservative; uncertain geometry remains bitmap-based to avoid inaccurate editable objects.
+- Text editability depends on OCR accuracy, available source text metadata, and font availability in the presentation editor.
+- Real provider verification requires local model credentials and is not part of default CI.
 
 ## Relation To Image-Layer Export
 
-The image-layer editable PPTX plan is a separate backup path for future model resources. Image-layer decomposition can produce movable/scalable/croppable visual layers, but it does not automatically produce native PowerPoint text boxes, editable line styles, or editable rounded rectangles. The generative editable export path composes a PPTX from OCR, native-shape fitting, provider-generated assets, and validation.
+Image-layer decomposition is a separate future path. It can produce movable, scalable, croppable visual layers, but it does not automatically provide editable PowerPoint text boxes, line styles, rounded rectangles, or shape semantics.
+
+Generative editable PPTX export focuses on reconstructing a practical PowerPoint document from OCR, VLM layout analysis, image editing/generation, native-shape fitting, deterministic composition, and validation.

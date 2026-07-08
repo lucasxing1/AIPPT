@@ -32,7 +32,7 @@ NotebookLM's PPT feature is closer to a one-click result generator, with limited
 ## ✨ Features
 
 - 🎨 **Per-slide generation**: Create an editable outline and page designs before generating polished PPT pages
-- 🌐 **PPT Workbench**: Upload sources, configure model roles, preview slides, edit pages, track history, and export PDF/PPTX
+- 🌐 **PPT Workbench**: Upload sources, configure model roles, preview slides, edit pages, track history, and export PDF, raster PPTX, or editable PPTX
 - 📝 **Multi-format parsing**: Supports `.md/.txt/.pdf/.docx/.pptx` input and converts content to Markdown
 - ✏️ **Full-page image editing**: Edit each generated slide independently, revert history, and confirm replacements
 - 🔀 **Multi-model roles**: Configure `text_model`/`prompt_model`, `vlm_model`, `ocr_model`, `image_model`, and `edit_model` separately as needed
@@ -150,6 +150,7 @@ return an image URL, data URL, or base64 payload.
 ```yaml
 api:
   models:
+    # `prompt_model` is still accepted as a legacy alias for `text_model`.
     text_model:
       model: "gpt-4o"
       base_url: "https://api.openai.com/v1"

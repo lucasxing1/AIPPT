@@ -32,7 +32,7 @@ NotebookLM 的 PPT 能力更像“一键生成结果”，中间设计过程和�
 ## ✨ 功能特性
 
 - 🎨 **逐页生成**：先生成可编辑设计大纲和逐页设计，再使用 AI 模型生成精美 PPT 页面
-- 🌐 **PPT 工作台**：支持资料上传、模型配置、当前页大预览、缩略图列表、编辑历史和 PDF/PPTX 导出
+- 🌐 **PPT 工作台**：支持资料上传、模型配置、当前页大预览、缩略图列表、编辑历史，以及 PDF、栅格 PPTX 或可编辑 PPTX 导出
 - 📝 **多格式解析**：支持 `.md/.txt/.pdf/.docx/.pptx` 输入，统一转 Markdown 后生成
 - ✏️ **整页图像编辑**：支持对每页幻灯片单独二次编辑、历史回退和确认替换
 - 🔀 **多模型角色**：按需分别配置 `text_model`/`prompt_model`、`vlm_model`、`ocr_model`、`image_model`、`edit_model`
@@ -150,6 +150,7 @@ completion，图像/编辑模型走多模态 chat completion，响应需返回�
 ```yaml
 api:
   models:
+    # `prompt_model` 仍可作为 `text_model` 的旧字段别名使用。
     text_model:
       model: "gpt-4o"
       base_url: "https://api.openai.com/v1"

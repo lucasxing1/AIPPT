@@ -200,7 +200,7 @@ GitHub Actions runs the same default checks on `main` and `dev` pull requests an
 - [ ] Support region selection for partial slide editing
 - [ ] Add more provider profile templates
 
-## 🙏 Acknowledgements
+## Acknowledgements
 
 The editable PPTX reconstruction design references ideas from:
 - [LRriver/slide-alchemy](https://github.com/LRriver/slide-alchemy)

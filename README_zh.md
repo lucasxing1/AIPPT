@@ -192,13 +192,19 @@ npm run test
 npm run build
 ```
 
-GitHub Actions 会在 `main` 和 `dev` 的 Pull Request 与 push 上运行这些默认检查。真实模型 API 调用需要私有 Key，且容易受外部服务波动影响，因此不放入默认 CI。
+GitHub Actions 会在 `main` 和 `dev` 的 Pull Request 与 push 上运行这些默认检查。真实模型 API 调用和桌面 PowerPoint/WPS 渲染需要私有 Key 或 GitHub runner 中不存在的宿主应用，因此不放入默认 CI。CI 仍会验证包级 PPTX 结构、对象 manifest、渲染器 contract 和 fake-provider 重建路径。
 
 ## 📋 TODO
 
 - [ ] 将生成的 PPT 图片增强为结构化、可编辑的 PPT 内容
 - [ ] 支持框选局部区域编辑
 - [ ] 增加更多 provider profile 模板
+
+## 致谢
+
+可编辑 PPTX 重建设计参考了以下项目的思路：
+- [LRriver/slide-alchemy](https://github.com/LRriver/slide-alchemy)
+- [ningzimu/image-to-editable-ppt-skill](https://github.com/ningzimu/image-to-editable-ppt-skill)
 
 ## 📄 许可证
 

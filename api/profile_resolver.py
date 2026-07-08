@@ -15,9 +15,18 @@ def _has_complete_generation_profiles(config: Any) -> bool:
     profiles = getattr(config, "model_profiles", None)
     if not profiles:
         return False
-    required = (profiles.prompt_model, profiles.image_model)
+    text_profile = (
+        getattr(profiles, "text_model", None)
+        or getattr(profiles, "prompt_model", None)
+        or getattr(profiles, "VLM", None)
+    )
+    image_profile = getattr(profiles, "image_model", None)
+    required = (text_profile, image_profile)
     return all(
-        _has_value(profile.model) and _has_value(profile.base_url) and _has_value(profile.api_key)
+        profile
+        and _has_value(profile.model)
+        and _has_value(profile.base_url)
+        and _has_value(profile.api_key)
         for profile in required
     )
 
@@ -41,7 +50,7 @@ def profiles_from_generation_config(config: Any) -> ModelProfileSet:
 
     if _has_complete_legacy_profiles(config):
         data: Dict[str, Any] = {
-            "prompt_model": {
+            "text_model": {
                 "model": config.text.model,
                 "base_url": config.text.base_url,
                 "api_key": config.text.api_key,
@@ -68,7 +77,7 @@ def profiles_from_generation_config(config: Any) -> ModelProfileSet:
 
     return resolve_model_profiles(
         {
-            "prompt_model": {
+            "text_model": {
                 "model": config.get_text_model(),
                 "base_url": config.get_text_base_url(),
                 "api_key": config.get_text_api_key(),
@@ -98,7 +107,7 @@ def profiles_from_edit_config(config: Any) -> ModelProfileSet:
 
     return resolve_model_profiles(
         {
-            "prompt_model": {
+            "text_model": {
                 "model": config.model,
                 "base_url": config.base_url,
                 "api_key": config.api_key,

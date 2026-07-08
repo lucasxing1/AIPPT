@@ -20,6 +20,8 @@ export const DEFAULT_FULL_API_CONFIG: FullApiConfig = {
   image: DEFAULT_IMAGE_CONFIG,
   text: DEFAULT_TEXT_CONFIG,
   edit: { ...DEFAULT_IMAGE_CONFIG },
+  vlm: { apiKey: '', baseUrl: '', model: '' },
+  ocr: { apiKey: '', baseUrl: '', model: '' },
 }
 
 export function loadFullApiConfig(): FullApiConfig {
@@ -48,6 +50,16 @@ export function loadFullApiConfig(): FullApiConfig {
           baseUrl: parsed.edit?.baseUrl || image.baseUrl,
           model: parsed.edit?.model || image.model,
         },
+        vlm: {
+          apiKey: parsed.vlm?.apiKey || '',
+          baseUrl: parsed.vlm?.baseUrl || '',
+          model: parsed.vlm?.model || '',
+        },
+        ocr: {
+          apiKey: parsed.ocr?.apiKey || '',
+          baseUrl: parsed.ocr?.baseUrl || '',
+          model: parsed.ocr?.model || '',
+        },
       }
     }
   } catch (e) {
@@ -70,12 +82,16 @@ export function validateFullApiConfig(config: FullApiConfig): {
     image?: { apiKey?: string; baseUrl?: string; model?: string }
     text?: { apiKey?: string; baseUrl?: string; model?: string }
     edit?: { apiKey?: string; baseUrl?: string; model?: string }
+    vlm?: { apiKey?: string; baseUrl?: string; model?: string }
+    ocr?: { apiKey?: string; baseUrl?: string; model?: string }
   }
 } {
   const errors: {
     image?: { apiKey?: string; baseUrl?: string; model?: string }
     text?: { apiKey?: string; baseUrl?: string; model?: string }
     edit?: { apiKey?: string; baseUrl?: string; model?: string }
+    vlm?: { apiKey?: string; baseUrl?: string; model?: string }
+    ocr?: { apiKey?: string; baseUrl?: string; model?: string }
   } = {}
 
   const validateUrl = (value: string | undefined) => {
@@ -107,6 +123,23 @@ export function validateFullApiConfig(config: FullApiConfig): {
     if (!config.edit.model?.trim()) editErrors.model = '编辑模型名称不能为空'
     if (Object.keys(editErrors).length > 0) errors.edit = editErrors
   }
+
+  const validateOptionalModel = (
+    value: ImageApiConfig | undefined,
+    emptyModelMessage: string
+  ) => {
+    if (!value || (!value.apiKey && !value.baseUrl && !value.model)) return undefined
+    const modelErrors: { apiKey?: string; baseUrl?: string; model?: string } = {}
+    const urlError = validateUrl(value.baseUrl)
+    if (urlError) modelErrors.baseUrl = urlError
+    if (!value.model?.trim()) modelErrors.model = emptyModelMessage
+    return Object.keys(modelErrors).length > 0 ? modelErrors : undefined
+  }
+
+  const vlmErrors = validateOptionalModel(config.vlm, 'VLM 模型名称不能为空')
+  if (vlmErrors) errors.vlm = vlmErrors
+  const ocrErrors = validateOptionalModel(config.ocr, 'OCR 模型名称不能为空')
+  if (ocrErrors) errors.ocr = ocrErrors
 
   return { isValid: Object.keys(errors).length === 0, errors }
 }

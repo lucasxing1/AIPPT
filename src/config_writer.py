@@ -30,23 +30,24 @@ def _clean_profile_data(
     profile_data: Dict[str, Any], existing_models: Dict[str, Any]
 ) -> Dict[str, Any]:
     cleaned: Dict[str, Any] = {}
-    for role in ("prompt_model", "image_model", "edit_model"):
+    for role in ("text_model", "image_model", "edit_model", "VLM", "ocr_model"):
         profile = profile_data.get(role)
+        if not profile and role == "text_model":
+            profile = profile_data.get("prompt_model")
         if not profile:
             continue
         existing_profile = (
             existing_models.get(role, {}) if isinstance(existing_models, dict) else {}
         )
+        if role == "text_model" and not existing_profile and isinstance(existing_models, dict):
+            existing_profile = existing_models.get("prompt_model", {})
         api_key = profile.get("api_key") or existing_profile.get("api_key", "")
         cleaned[role] = {
             "model": profile.get("model", ""),
             "base_url": profile.get("base_url", ""),
             "api_key": api_key,
-            "adapter": profile.get(
-                "adapter", "openai_chat" if role == "prompt_model" else "raw_chat_multimodal"
-            ),
         }
-        if role == "prompt_model":
+        if role == "text_model":
             cleaned[role]["thinking"] = profile.get(
                 "thinking", existing_profile.get("thinking", "disabled")
             )

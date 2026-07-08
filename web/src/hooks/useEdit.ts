@@ -86,23 +86,20 @@ export function useEdit() {
               base_url: editConfig.baseUrl,
               model: editConfig.model,
               model_profiles: {
-                prompt_model: {
+                text_model: {
                   model: state.fullApiConfig.text.model,
                   base_url: state.fullApiConfig.text.baseUrl,
-                  api_key: state.fullApiConfig.text.apiKey,
-                  adapter: 'openai_chat'
+                  api_key: state.fullApiConfig.text.apiKey
                 },
                 image_model: {
                   model: state.fullApiConfig.image.model,
                   base_url: state.fullApiConfig.image.baseUrl,
-                  api_key: state.fullApiConfig.image.apiKey,
-                  adapter: 'raw_chat_multimodal'
+                  api_key: state.fullApiConfig.image.apiKey
                 },
                 edit_model: {
                   model: editConfig.model,
                   base_url: editConfig.baseUrl,
-                  api_key: editConfig.apiKey,
-                  adapter: 'raw_chat_multimodal'
+                  api_key: editConfig.apiKey
                 }
               }
             }

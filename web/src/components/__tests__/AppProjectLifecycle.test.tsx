@@ -90,6 +90,7 @@ const mocks = vi.hoisted(() => {
     generationIsGenerating: true,
     rightPanelSnapshots: [] as Array<{ slideIds: string[]; isLoading: boolean; hasEditHandler: boolean }>,
     exportSlideSnapshots: [] as string[][],
+    exportHookError: null as string | null,
     uploadSettlements: [] as Array<{ status: 'resolved' } | { status: 'rejected'; message: string }>,
     latestUploadSettlement: null as Promise<void> | null,
     capturedAutoSaveParams: undefined as Record<string, unknown> | undefined,
@@ -98,6 +99,7 @@ const mocks = vi.hoisted(() => {
     selectedUploadFile: new File(['# Uploaded Deck'], 'uploaded.md', { type: 'text/markdown' }),
     workflowPanelMounts: 0,
     startExport: vi.fn(),
+    clearExportError: vi.fn(),
     beginEdit: vi.fn(),
     submitEdit: vi.fn(),
     revertToVersion: vi.fn(),
@@ -205,11 +207,13 @@ vi.mock('../RightPanel', () => ({
   default: ({
     slides,
     isLoading,
-    onSlideEdit
+    onSlideEdit,
+    onExport
   }: {
     slides: Slide[]
     isLoading?: boolean
     onSlideEdit?: (slideId: string) => void
+    onExport?: (format: 'generative_editable_pptx') => void
   }) => {
     mocks.rightPanelSnapshots.push({
       slideIds: slides.map(slide => slide.id),
@@ -217,7 +221,16 @@ vi.mock('../RightPanel', () => ({
       hasEditHandler: typeof onSlideEdit === 'function'
     })
 
-    return <div data-testid="right-panel-slide-ids">{slides.map(slide => slide.id).join(',')}</div>
+    return (
+      <div>
+        <div data-testid="right-panel-slide-ids">{slides.map(slide => slide.id).join(',')}</div>
+        {onExport && (
+          <button type="button" onClick={() => onExport('generative_editable_pptx')}>
+            Export generative editable
+          </button>
+        )}
+      </div>
+    )
   }
 }))
 vi.mock('../ApiConfigForm', () => ({ default: () => null }))
@@ -325,8 +338,9 @@ vi.mock('../../hooks/useExport', () => ({
     mocks.exportSlideSnapshots.push(slides.map(slide => slide.id))
 
     return {
-      state: { isExporting: false, progress: 0, error: null },
-      startExport: mocks.startExport
+      state: { isExporting: false, progress: 0, error: mocks.exportHookError, format: null },
+      startExport: mocks.startExport,
+      clearError: mocks.clearExportError
     }
   }
 }))
@@ -384,6 +398,7 @@ describe('App project lifecycle safeguards', () => {
     mocks.generationIsGenerating = true
     mocks.rightPanelSnapshots.length = 0
     mocks.exportSlideSnapshots.length = 0
+    mocks.exportHookError = null
     mocks.uploadSettlements.length = 0
     mocks.latestUploadSettlement = null
     mocks.capturedAutoSaveParams = undefined
@@ -662,6 +677,34 @@ describe('App project lifecycle safeguards', () => {
       hasEditHandler: true
     })
     expect(mocks.exportSlideSnapshots).toContainEqual(['previous-completed-slide'])
+  })
+
+  it('keeps the current deck visible when generative editable export fails', async () => {
+    mocks.startExport.mockRejectedValueOnce(new Error('preview validation failed'))
+
+    render(<App />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('right-panel-slide-ids')).toHaveTextContent('current-slide')
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Export generative editable' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('preview validation failed')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('right-panel-slide-ids')).toHaveTextContent('current-slide')
+  })
+
+  it('can dismiss export errors reported by the export hook', async () => {
+    mocks.exportHookError = 'provider timed out'
+
+    render(<App />)
+
+    expect(screen.getByText('provider timed out')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '关闭导出错误' }))
+
+    expect(mocks.clearExportError).toHaveBeenCalled()
   })
 
   it('blocks project open, new, and duplicate when edit discard confirmation is needed', async () => {

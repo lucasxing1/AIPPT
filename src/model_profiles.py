@@ -16,6 +16,8 @@ DEFAULT_ADAPTERS = {
     "prompt": "openai_chat",
     "image": "raw_chat_multimodal",
     "edit": "raw_chat_multimodal",
+    "vlm": "openai_chat",
+    "ocr": "openai_chat",
 }
 
 
@@ -47,6 +49,7 @@ class ModelProfile:
     def to_public_dict(self) -> Dict[str, Any]:
         data = asdict(self)
         data["api_key"] = "SET" if self.api_key else "EMPTY"
+        data.pop("adapter", None)
         return data
 
 
@@ -55,23 +58,36 @@ class ModelProfileSet:
     prompt: ModelProfile
     image: ModelProfile
     edit: ModelProfile
+    vlm: Optional[ModelProfile] = None
+    ocr: Optional[ModelProfile] = None
 
     def to_public_dict(self) -> Dict[str, Any]:
-        return {
-            "prompt_model": self.prompt.to_public_dict(),
+        data = {
+            "text_model": self.prompt.to_public_dict(),
             "image_model": self.image.to_public_dict(),
             "edit_model": self.edit.to_public_dict(),
         }
+        if self.vlm:
+            data["VLM"] = self.vlm.to_public_dict()
+        if self.ocr:
+            data["ocr_model"] = self.ocr.to_public_dict()
+        return data
 
 
 def resolve_model_profiles(data: Dict[str, Any]) -> ModelProfileSet:
-    prompt = _profile_from_dict("prompt", data.get("prompt_model") or data.get("text") or {})
+    vlm_source = data.get("VLM") or data.get("vlm_model")
+    prompt_source = (
+        data.get("text_model") or data.get("prompt_model") or data.get("text") or vlm_source or {}
+    )
+    prompt = _profile_from_dict("prompt", prompt_source)
     image = _profile_from_dict("image", data.get("image_model") or data.get("image") or {})
 
     edit_source = data.get("edit_model") or data.get("edit")
     edit = _profile_from_dict("edit", edit_source) if edit_source else _inherit_edit_profile(image)
+    vlm = _optional_profile_from_dict("vlm", vlm_source)
+    ocr = _optional_profile_from_dict("ocr", data.get("ocr_model"))
 
-    return ModelProfileSet(prompt=prompt, image=image, edit=edit)
+    return ModelProfileSet(prompt=prompt, image=image, edit=edit, vlm=vlm, ocr=ocr)
 
 
 def load_profiles_from_env(env_path: Optional[Path] = None) -> Optional[ModelProfileSet]:
@@ -103,7 +119,7 @@ def load_profiles_from_env(env_path: Optional[Path] = None) -> Optional[ModelPro
 
     return resolve_model_profiles(
         {
-            "prompt_model": {
+            "text_model": {
                 "id": "env-text",
                 "label": text_model,
                 "model": text_model,
@@ -150,7 +166,7 @@ def load_default_profiles(
 
     if api_config.get("text") or api_config.get("image"):
         legacy = {
-            "prompt_model": {
+            "text_model": {
                 **(api_config.get("text") or {}),
                 "adapter": (api_config.get("text") or {}).get("adapter", "openai_chat"),
             },
@@ -202,6 +218,14 @@ def _profile_from_dict(role: str, data: Dict[str, Any]) -> ModelProfile:
         adapter=data.get("adapter", DEFAULT_ADAPTERS.get(role, "openai_chat")),
         thinking=data.get("thinking", "disabled"),
     )
+
+
+def _optional_profile_from_dict(
+    role: str, data: Optional[Dict[str, Any]]
+) -> Optional[ModelProfile]:
+    if not data:
+        return None
+    return _profile_from_dict(role, data)
 
 
 def _parse_env_like_file(path: Path) -> Dict[str, str]:

@@ -28,25 +28,37 @@ export async function saveBackendModelProfiles(
 
 export function buildModelProfiles(config: FullApiConfig): ModelProfilesRequestConfig {
   const editConfig = config.edit || config.image
-  return {
-    prompt_model: {
+  const profiles: ModelProfilesRequestConfig = {
+    text_model: {
       model: config.text.model,
       base_url: config.text.baseUrl,
       api_key: config.text.apiKey,
-      adapter: 'openai_chat',
       thinking: config.text.thinking || 'disabled',
     },
     image_model: {
       model: config.image.model,
       base_url: config.image.baseUrl,
       api_key: config.image.apiKey,
-      adapter: 'raw_chat_multimodal',
     },
     edit_model: {
       model: editConfig.model,
       base_url: editConfig.baseUrl,
       api_key: editConfig.apiKey,
-      adapter: 'raw_chat_multimodal',
     },
   }
+  if (config.vlm?.model || config.vlm?.baseUrl || config.vlm?.apiKey) {
+    profiles.VLM = {
+      model: config.vlm.model,
+      base_url: config.vlm.baseUrl,
+      api_key: config.vlm.apiKey,
+    }
+  }
+  if (config.ocr?.model || config.ocr?.baseUrl || config.ocr?.apiKey) {
+    profiles.ocr_model = {
+      model: config.ocr.model,
+      base_url: config.ocr.baseUrl,
+      api_key: config.ocr.apiKey,
+    }
+  }
+  return profiles
 }

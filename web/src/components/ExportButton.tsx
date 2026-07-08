@@ -73,7 +73,7 @@ function ExportButton({ disabled = false, isExporting = false, onExport }: Expor
 
       {/* 下拉菜单 */}
       {isOpen && !buttonDisabled && (
-        <div className="absolute right-0 mt-2 w-52 rounded-2xl bg-[var(--surface)] shadow-lg ring-1 ring-[var(--border-soft)] z-10 overflow-hidden" role="listbox">
+        <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-[var(--surface)] shadow-lg ring-1 ring-[var(--border-soft)] z-10 overflow-hidden" role="listbox">
           <div className="py-1">
             <button
               type="button"
@@ -105,6 +105,22 @@ function ExportButton({ disabled = false, isExporting = false, onExport }: Expor
               <div className="text-left">
                 <div className="font-semibold text-[var(--text-strong)]">{t('export.pptxTitle')}</div>
                 <div className="text-xs text-[var(--text-muted)]">{t('export.pptxSubtitle')}</div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleExport('generative_editable_pptx')}
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm text-[var(--text)] hover:bg-primary-50 transition-colors"
+              role="option"
+            >
+              <div className="w-9 h-9 bg-emerald-100 rounded-xl flex items-center justify-center">
+                <svg className="h-5 w-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h8M8 11h8m-8 4h4m8-9v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h8l6 6z" />
+                </svg>
+              </div>
+              <div className="text-left min-w-0">
+                <div className="font-semibold text-[var(--text-strong)]">{t('export.generativePptxTitle')}</div>
+                <div className="text-xs text-[var(--text-muted)]">{t('export.generativePptxSubtitle')}</div>
               </div>
             </button>
           </div>

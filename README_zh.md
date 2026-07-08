@@ -19,6 +19,7 @@ NotebookLM 的 PPT 能力更像“一键生成结果”，中间设计过程和�
 - **模型可控**：文本规划、生图、图片编辑可分别配置不同 OpenAI-compatible 模型
 - **本地可跑**：可使用本地 `config.yaml` 或 WebUI 本地 API 配置管理模型连接，项目记录和导出文件不包含 API Key
 - **结果可导出**：生成后可直接导出 PDF/PPTX，适合继续汇报或二次编辑
+- **实验性高保真可编辑 PPTX 导出**：通过 provider 门禁的生成式可编辑导出链路，把幻灯片图片重建为 PowerPoint 可编辑文本框、保守原生形状和可移动图片资产
 
 ## ✨ 功能特性
 
@@ -29,6 +30,7 @@ NotebookLM 的 PPT 能力更像“一键生成结果”，中间设计过程和�
 - 🔀 **三模型角色**：支持 `prompt_model`、`image_model`、`edit_model` 分别配置
 - 🖼️ **图像结果兼容**：兼容 URL、Markdown 图片链接、data URL、`b64_json` 和纯 base64
 - 💾 **多项目本地留存**：支持在浏览器本地保存多个 PPT 项目，恢复资料、设计大纲、逐页设计、生成图片和单页编辑历史
+- 📤 **可编辑 PPTX 重建**：新增独立的实验性高保真可编辑 PPTX 导出模式，需要通过 provider 验证后使用，详见 [Generative Editable PPTX Export](docs/generative-editable-pptx.md)
 
 ## 🚀 快速开始
 
@@ -102,6 +104,8 @@ AIPPT 会把项目内容和图片资源保存在当前浏览器 Profile 的 Inde
 6. **预览编辑**：在右侧面板预览生成的幻灯片，点击可进行单页编辑
 7. **导出文件**：选择 PDF 或 PPTX 格式导出
 
+导出菜单会保留原有栅格 PPTX 选项，并新增独立的实验性高保真可编辑 PPTX 选项。可编辑模式依赖 OCR、图像编辑和图像生成 provider，默认优先保证质量：验证失败时返回错误，不会悄悄降级为低保真 PPTX，除非请求显式允许 fallback。当前测试过的 provider 组合仍未通过严格 live 验证。详见 [Generative Editable PPTX Export](docs/generative-editable-pptx.md)。
+
 仓库内置演示资料为 `doc/L9.md`。该路径是仓库相对路径，clone 后可直接用于 WebUI 上传或命令行示例。
 
 ## 📁 项目结构
@@ -123,6 +127,7 @@ OpenNotebookLM-AIPPT/
 
 所有配置统一在 `config.yaml` 中管理，包括：
 - API 配置（文本 prompt、生图、编辑三角色模型）
+- 生成式可编辑 PPTX provider 角色和质量门禁（OCR、清理、资产生成、修复、验证）
 - PPT 默认配置（语言、风格、页数）
 - 超时和重试配置
 
@@ -130,21 +135,22 @@ OpenNotebookLM-AIPPT/
 
 ### 使用 OpenAI 兼容 API
 
+当前调用协议为 OpenAI-compatible `/chat/completions`：文本模型走 chat
+completion，图像/编辑模型走多模态 chat completion，响应需返回图片 URL、data URL
+或 base64。
+
 ```yaml
 api:
   models:
     prompt_model:
-      adapter: "openai_chat"
       model: "gpt-4o"
       base_url: "https://api.openai.com/v1"
       api_key: "sk-xxx"
     image_model:
-      adapter: "raw_chat_multimodal"
       model: "gpt-image-2"
       base_url: "https://api.example.com/v1"
       api_key: "sk-xxx"
     edit_model:
-      adapter: "raw_chat_multimodal"
       model: "gpt-image-2"
       base_url: "https://api.example.com/v1"
       api_key: "sk-xxx"

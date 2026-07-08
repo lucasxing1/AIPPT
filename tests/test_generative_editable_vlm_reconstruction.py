@@ -23,6 +23,12 @@ def _fake_powerpoint_preview(page, artifact_root, *, pptx_path):
     )
 
 
+def _pass_validation_report(**kwargs):
+    from src.generative_editable_preview_validator import ValidationReport
+
+    return ValidationReport(status="passed", checked_pages=1, issues=[])
+
+
 class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
     def test_vlm_validation_fails_large_source_preserved_bitmap_coverage_without_runner(self):
         from src.generative_editable_manifest import BitmapAssetSpec, PageManifest
@@ -497,6 +503,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     ),
                     provider_max_attempts=2,
                     provider_retry_backoff_seconds=0,
+                    preview_renderer=_fake_powerpoint_preview,
+                    preview_validator=_pass_validation_report,
                 ),
             )
 
@@ -548,6 +556,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                             api_key="fake",
                         )
                     ),
+                    preview_renderer=_fake_powerpoint_preview,
+                    preview_validator=_pass_validation_report,
                 ),
             )
             events = GenerativeEditableJobArtifacts(
@@ -626,6 +636,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                     image_edit_provider=image_edit_provider,
                     provider_max_attempts=2,
                     provider_retry_backoff_seconds=0,
+                    preview_renderer=_fake_powerpoint_preview,
+                    preview_validator=_pass_validation_report,
                 ),
             )
 
@@ -3047,6 +3059,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         )
                     ),
                     asset_sheet_image_edit_provider=FailingAssetSheetProvider(),
+                    preview_renderer=_fake_powerpoint_preview,
+                    preview_validator=_pass_validation_report,
                 ),
             )
             job_dir = root / "artifacts" / "job-asset-fallback"
@@ -3363,6 +3377,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         )
                     ),
                     asset_sheet_image_edit_provider=asset_sheet_provider,
+                    preview_renderer=_fake_powerpoint_preview,
+                    preview_validator=_pass_validation_report,
                 ),
             )
             job_dir = root / "artifacts" / "job-complex-source"
@@ -3451,6 +3467,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         )
                     ),
                     asset_sheet_image_edit_provider=FailingAssetSheetProvider(),
+                    preview_renderer=_fake_powerpoint_preview,
+                    preview_validator=_pass_validation_report,
                 ),
             )
             job_dir = root / "artifacts" / "job-mixed-fallback"
@@ -3546,6 +3564,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         )
                     ),
                     asset_sheet_image_edit_provider=ShortAssetSheetProvider(),
+                    preview_renderer=_fake_powerpoint_preview,
+                    preview_validator=_pass_validation_report,
                 ),
             )
             job_dir = root / "artifacts" / "job-short-sheet"
@@ -3625,6 +3645,8 @@ class GenerativeEditableVLMReconstructionTest(unittest.TestCase):
                         )
                     ),
                     asset_sheet_image_edit_provider=asset_sheet_provider,
+                    preview_renderer=_fake_powerpoint_preview,
+                    preview_validator=_pass_validation_report,
                 ),
             )
             job_dir = root / "artifacts" / "job-icon-source-preserved"

@@ -192,13 +192,19 @@ npm run test
 npm run build
 ```
 
-GitHub Actions runs the same default checks on `main` and `dev` pull requests and pushes. Real model API calls are intentionally not part of the default CI because they require private keys and can be flaky.
+GitHub Actions runs the same default checks on `main` and `dev` pull requests and pushes. Real model API calls and desktop PowerPoint/WPS rendering are intentionally not part of the default CI because they require private keys or host applications that are not available in GitHub runners. CI still validates package-level PPTX structure, object manifests, renderer contracts, and fake-provider reconstruction paths.
 
 ## 📋 TODO
 
 - [ ] Upgrade generated PPT images into structured, editable PPT content
 - [ ] Support region selection for partial slide editing
 - [ ] Add more provider profile templates
+
+## 🙏 Acknowledgements
+
+The editable PPTX reconstruction design references ideas from:
+- [LRriver/slide-alchemy](https://github.com/LRriver/slide-alchemy)
+- [ningzimu/image-to-editable-ppt-skill](https://github.com/ningzimu/image-to-editable-ppt-skill)
 
 ## 📄 License
 

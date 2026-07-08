@@ -6,6 +6,7 @@ import sys
 import time
 import unittest
 from contextlib import redirect_stdout
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -23,9 +24,34 @@ from src.generative_editable_providers import (
 )
 
 
+def _fake_powerpoint_preview(page, artifact_root, *, pptx_path):
+    from src.generative_editable_preview_validator import PreviewRenderResult
+
+    return PreviewRenderResult(
+        image=Image.new("RGB", page.source_image_size, "white"),
+        metadata={"renderer": "test_powerpoint", "is_powerpoint_render": True},
+    )
+
+
+def _pass_validation_report(**kwargs):
+    from src.generative_editable_preview_validator import ValidationReport
+
+    return ValidationReport(status="passed", checked_pages=1, issues=[])
+
+
 class RealGenerativeEditableRunnerTest(unittest.TestCase):
     def setUp(self):
         import scripts.run_real_generative_editable_pptx as runner
+
+        original_vlm_dependencies = runner._vlm_dependencies
+
+        def fake_vlm_dependencies(**kwargs):
+            dependencies = original_vlm_dependencies(**kwargs)
+            return replace(
+                dependencies,
+                preview_renderer=_fake_powerpoint_preview,
+                preview_validator=_pass_validation_report,
+            )
 
         self._config_patcher = patch.object(
             runner,
@@ -33,8 +59,15 @@ class RealGenerativeEditableRunnerTest(unittest.TestCase):
             side_effect=lambda use_fake=False: load_generative_editable_config(use_fake=True),
         )
         self._config_patcher.start()
+        self._vlm_dependencies_patcher = patch.object(
+            runner,
+            "_vlm_dependencies",
+            side_effect=fake_vlm_dependencies,
+        )
+        self._vlm_dependencies_patcher.start()
 
     def tearDown(self):
+        self._vlm_dependencies_patcher.stop()
         self._config_patcher.stop()
 
     def test_default_replay_inputs_exclude_edited_derivatives(self):

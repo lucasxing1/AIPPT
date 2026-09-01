@@ -24,28 +24,36 @@ Use AIPPT defaults when the user does not specify an option.
 ## Input Contract
 
 ```yaml
-source_path: path-to-markdown-or-text
-mode: full | prompt-only | from-prompt
-num_pages: positive-integer
-language: output-language
-style: presentation-style
-audience: target-audience
-aspect_ratio: 16:9 | 4:3 | 1:1
-quality: 1K | 2K | 4K
-output_dir: local-directory
-prompt_path: path-to-prompts-json
-export_pdf: true | false
+source_path: path/to/source.md
+mode: full
+num_pages: 8
+language: zh-CN
+style: modern-business
+audience: professionals
+aspect_ratio: "16:9"
+quality: 2K
+output_dir: output
+from_prompt: null
+export_pdf: true
 ```
 
-`source_path` is required for `full` and `prompt-only`. `prompt_path` is required for `from-prompt`. Reject unsupported enum values before running AIPPT.
+Allowed values:
+
+- `mode`: `full`, `prompt-only`, or `from-prompt`
+- `aspect_ratio`: `16:9`, `4:3`, or `1:1`
+- `quality`: `1K`, `2K`, or `4K`
+- `export_pdf`: `true` or `false`
+
+`source_path` is required for `full` and `prompt-only`. `from_prompt` maps directly to the `--from-prompt` CLI flag and is required for `from-prompt`. Reject unsupported enum values before running AIPPT.
 
 ## Preflight
 
 1. Confirm the current directory contains `main.py`, `requirements.txt`, and `config.example.yaml`.
 2. Use Python 3.11 or 3.12. Prefer `python3` when `python` is unavailable.
 3. If dependencies are missing, install `requirements.txt` in a virtual environment.
-4. Confirm the source file exists and is not empty.
-5. Confirm a local, ignored `config.yaml` is available before full generation.
+4. For `full` and `prompt-only`, confirm the source file exists and is not empty.
+5. For `from-prompt`, confirm the prompt file exists and is not empty.
+6. Confirm a local, ignored `config.yaml` is available before `full` or `from-prompt`, because both modes generate images.
 
 Never print, copy, commit, or place API keys in commands. Do not use `--api-key`; credentials belong only in the ignored local `config.yaml`.
 
